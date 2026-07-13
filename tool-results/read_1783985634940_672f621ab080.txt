@@ -1,0 +1,803 @@
+     1→#!/system/bin/sh
+     2→# common.sh — 卫星地球 Pro v6.3.0 公共函数库
+     3→#
+     4→# v6.3.0 关键修复（基于 AxManager 官方源码核实）:
+     5→#   1. MODDIR 解析：放弃不可靠的 ${0%/*}，改用 pwd + AXERONDIR + 多策略兜底
+     6→#      原因：AxManager 调用 action.sh 时执行 cd "<pluginPath>"; sh ./action.sh
+     7→#      导致 $0 = "./action.sh"，${0%/*} = "."，一旦脚本内 cd 就失效
+     8→#   2. se_put 错误吞没：修复 || true 在某些 sh 实现下不生效的问题
+     9→#   3. dumpsys 解析：增强多 ROM 兼容（MIUI/HyperOS/ColorOS/OneUI）
+    10→#   4. 全部外部命令加 2>/dev/null，确保脚本永不非零退出
+    11→#
+    12→# 严格遵循 AxManager 官方插件协议 + 免Root约束
+    13→# https://fahrez182.github.io/AxManager/zh/plugin/what-is-plugin.html
+    14→
+    15→# ----------------------------------------------------------------------
+    16→# 路径与版本常量
+    17→# ----------------------------------------------------------------------
+    18→SE_VERSION="6.3.0"
+    19→SE_VERSION_CODE="6300"
+    20→SE_LOG_TAG="SatelliteEarth"
+    21→
+    22→# 日志路径优先 /data/local/tmp（ADB 必写、稳定）
+    23→SE_LOG_FILE="/data/local/tmp/satellite_earth.log"
+    24→if [ ! -w "$(dirname "$SE_LOG_FILE")" ] 2>/dev/null; then
+    25→    SE_LOG_FILE="/storage/emulated/0/satellite_earth.log"
+    26→fi
+    27→
+    28→# 运行时文件
+    29→SE_PID_FILE="/data/local/tmp/satellite_earth_monitor.pid"
+    30→SE_STATE_FILE="/data/local/tmp/satellite_earth_monitor.state"
+    31→SE_NOTIFY_TAG="satellite_earth_monitor"
+    32→
+    33→# weaknet 互锁标志 + DNS 预热 PID 锁
+    34→WEAKNET_ACTIVE_FLAG="/data/local/tmp/satellite_earth_weaknet_active"
+    35→DNS_PREFETCH_PID="/data/local/tmp/satellite_earth_dns_prefetch.pid"
+    36→
+    37→# 模块 ID（与 module.prop 一致）
+    38→SE_MOD_ID="Satellite_Earth"
+    39→
+    40→# ======================================================================
+    41→# v6.3.0 核心修复：健壮的模块根目录解析
+    42→# ======================================================================
+    43→# 官方源码确认（ExecutePluginAction.kt:100-102）:
+    44→#   cmd = 'export PATH=...; cd "<pluginPath>"; sh ./action.sh; RES=$?; cd /; exit $RES'
+    45→# 因此:
+    46→#   - action.sh 的 $0 = "./action.sh"，${0%/*} = "."
+    47→#   - service.sh/post-fs-data.sh 用绝对路径调用，$0 = 绝对路径
+    48→#   - $MODPATH 仅在 customize.sh 阶段有效（未 export），action.sh 阶段不存在
+    49→#   - $AXERONDIR 在所有阶段可用（AxeronService.getDefaultEnvironment 注入）
+    50→#
+    51→# 策略优先级（按可靠性排序）:
+    52→#   1. pwd（脚本启动时 CWD = 模块根目录，最可靠）
+    53→#   2. $AXERONDIR/plugins/$SE_MOD_ID（官方环境变量推导）
+    54→#   3. $MODPATH（仅 customize.sh 阶段）
+    55→#   4. $0 推导（仅 service.sh/post-fs-data.sh 可靠）
+    56→#   5. 已知安装路径硬探测
+    57→se_resolve_moddir() {
+    58→    local candidate=""
+    59→
+    60→    # 策略 1: pwd（最可靠，CWD 在 action.sh 阶段保证是模块根目录）
+    61→    candidate="$(pwd 2>/dev/null)"
+    62→    if [ -n "$candidate" ] && [ -f "$candidate/module.prop" ] 2>/dev/null; then
+    63→        echo "$candidate"
+    64→        return 0
+    65→    fi
+    66→
+    67→    # 策略 2: $AXERONDIR/plugins/$SE_MOD_ID（官方环境变量，所有阶段可用）
+    68→    if [ -n "${AXERONDIR:-}" ]; then
+    69→        candidate="$AXERONDIR/plugins/$SE_MOD_ID"
+    70→        if [ -f "$candidate/module.prop" ] 2>/dev/null; then
+    71→            echo "$candidate"
+    72→            return 0
+    73→        fi
+    74→    fi
+    75→
+    76→    # 策略 3: $MODPATH（仅 customize.sh 阶段有效）
+    77→    if [ -n "${MODPATH:-}" ] && [ -f "$MODPATH/module.prop" ] 2>/dev/null; then
+    78→        echo "$MODPATH"
+    79→        return 0
+    80→    fi
+    81→
+    82→    # 策略 4: $0 推导（service.sh/post-fs-data.sh 用绝对路径调用时可靠）
+    83→    local raw_zero="${0:-}"
+    84→    if [ -n "$raw_zero" ] && [ "$raw_zero" != "${raw_zero#/}" ]; then
+    85→        # $0 以 / 开头（绝对路径）
+    86→        candidate="${raw_zero%/*}"
+    87→        [ -f "$candidate/module.prop" ] 2>/dev/null && { echo "$candidate"; return 0; }
+    88→        [ -f "$candidate/../module.prop" ] 2>/dev/null && {
+    89→            ( cd "$candidate/.." 2>/dev/null && pwd ) && return 0
+    90→        }
+    91→    fi
+    92→
+    93→    # 策略 5: readlink -f 推导
+    94→    if command -v readlink >/dev/null 2>&1; then
+    95→        local resolved
+    96→        resolved=$(readlink -f "$raw_zero" 2>/dev/null)
+    97→        if [ -n "$resolved" ]; then
+    98→            candidate="${resolved%/*}"
+    99→            [ -f "$candidate/module.prop" ] 2>/dev/null && { echo "$candidate"; return 0; }
+   100→            [ -f "$candidate/../module.prop" ] 2>/dev/null && {
+   101→                ( cd "$candidate/.." 2>/dev/null && pwd ) && return 0
+   102→            }
+   103→        fi
+   104→    fi
+   105→
+   106→    # 策略 6: 已知安装路径硬探测（按官方源码 PathHelper.java）
+   107→    local known_paths="
+   108→/data/user_de/0/com.android.shell/axeron/plugins/$SE_MOD_ID
+   109→/data/user_de/0/android/axeron/plugins/$SE_MOD_ID
+   110→/data/adb/modules/$SE_MOD_ID
+   111→/data/data/com.android.shell/axeron/plugins/$SE_MOD_ID
+   112→    "
+   113→    for p in $known_paths; do
+   114→        if [ -f "$p/module.prop" ] 2>/dev/null; then
+   115→            echo "$p"
+   116→            return 0
+   117→        fi
+   118→    done
+   119→
+   120→    return 1
+   121→}
+   122→
+   123→# ======================================================================
+   124→# 加载用户配置 + OEM 兼容性数据库
+   125→# ======================================================================
+   126→if [ -z "${SE_CONFIG_LOADED:-}" ]; then
+   127→    # 解析 MODDIR_ROOT（模块根目录）
+   128→    if [ -z "${MODDIR_ROOT:-}" ]; then
+   129→        MODDIR_ROOT="$(se_resolve_moddir 2>/dev/null)" || MODDIR_ROOT=""
+   130→    fi
+   131→
+   132→    # MODDIR 兼容变量（业务脚本使用）
+   133→    if [ -z "${MODDIR:-}" ]; then
+   134→        MODDIR="$MODDIR_ROOT"
+   135→    fi
+   136→
+   137→    # 加载 config.sh
+   138→    if [ -n "$MODDIR_ROOT" ] && [ -f "$MODDIR_ROOT/config.sh" ]; then
+   139→        . "$MODDIR_ROOT/config.sh" 2>/dev/null
+   140→        SE_CONFIG_LOADED=1
+   141→    fi
+   142→
+   143→    # 加载 OEM 兼容性数据库
+   144→    if [ -n "$MODDIR_ROOT" ] && [ -f "$MODDIR_ROOT/scripts/oem_compat.sh" ]; then
+   145→        . "$MODDIR_ROOT/scripts/oem_compat.sh" 2>/dev/null
+   146→        if command -v se_probe_oem_env >/dev/null 2>&1; then
+   147→            se_probe_oem_env 2>/dev/null
+   148→        fi
+   149→    fi
+   150→fi
+   151→
+   152→# ----------------------------------------------------------------------
+   153→# 默认值（config.sh 未设置时使用）
+   154→# ----------------------------------------------------------------------
+   155→: "${CARRIER:=auto}"
+   156→: "${ENABLE_WIFI_OPTIMIZE:=true}"
+   157→: "${WIFI_BAD_RSSI:=88}"
+   158→: "${WIFI_IDLE_MS:=7200000}"
+   159→: "${ENABLE_MOBILE_OPTIMIZE:=true}"
+   160→: "${ENABLE_5G_SA:=true}"
+   161→: "${ENABLE_DNS_PREFETCH:=true}"
+   162→: "${ENABLE_PRIVATE_DNS:=false}"
+   163→: "${PRIVATE_DNS_HOST:=dns.alidns.com}"
+   164→: "${ENABLE_LATE_VERIFY:=true}"
+   165→: "${ENABLE_MONITOR:=true}"
+   166→: "${ENABLE_SWITCH_NOTIFY:=true}"
+   167→: "${ENABLE_DYNAMIC_PARAMS:=true}"
+   168→: "${ENABLE_PING_FEEDBACK:=true}"
+   169→: "${ENABLE_OEM_COMPAT:=true}"
+   170→: "${WIFI_STRONG_RSSI:=60}"
+   171→: "${WIFI_WEAK_RSSI:=75}"
+   172→: "${MOBILE_STRONG_DBM:=85}"
+   173→: "${MOBILE_WEAK_DBM:=105}"
+   174→: "${PING_GOOD_MS:=80}"
+   175→: "${PING_BAD_MS:=200}"
+   176→: "${MONITOR_MIN_INTERVAL:=300}"
+   177→: "${MONITOR_NORMAL_INTERVAL:=600}"
+   178→: "${MONITOR_MAX_INTERVAL:=900}"
+   179→: "${NETWORK_READY_TIMEOUT:=10}"
+   180→
+   181→# ----------------------------------------------------------------------
+   182→# 日志（带轮转）
+   183→# ----------------------------------------------------------------------
+   184→log_msg() {
+   185→    local msg="$1"
+   186→    local tag="${2:-[core]}"
+   187→    local ts
+   188→    ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?")
+   189→    if [ -f "$SE_LOG_FILE" ]; then
+   190→        local size
+   191→        size=$(wc -c < "$SE_LOG_FILE" 2>/dev/null)
+   192→        if [ -n "$size" ] && [ "$size" -gt 262144 ] 2>/dev/null; then
+   193→            tail -100 "$SE_LOG_FILE" > "${SE_LOG_FILE}.tmp" 2>/dev/null
+   194→            mv "${SE_LOG_FILE}.tmp" "$SE_LOG_FILE" 2>/dev/null
+   195→            echo "$ts [log] 日志已轮转" >> "$SE_LOG_FILE" 2>/dev/null
+   196→        fi
+   197→    fi
+   198→    echo "$ts $tag $msg" >> "$SE_LOG_FILE" 2>/dev/null
+   199→    return 0
+   200→}
+   201→
+   202→# ----------------------------------------------------------------------
+   203→# settings 安全写入/读取/删除（v6.3.0: 强化错误吞没）
+   204→# ----------------------------------------------------------------------
+   205→# v6.3.0 修复:
+   206→#   - se_put 用 if/else 替代 || true（某些 dash/busybox sh 下 || true 不可靠）
+   207→#   - 增加调试日志（写失败时记录）
+   208→#   - OEM 兼容性过滤
+   209→se_put() {
+   210→    local namespace="$1"
+   211→    local key="$2"
+   212→    local value="$3"
+   213→
+   214→    if [ "${ENABLE_OEM_COMPAT:-true}" = "true" ] && [ "$(type -t se_put_safe 2>/dev/null)" = "function" ]; then
+   215→        se_put_safe "$namespace" "$key" "$value" 2>/dev/null
+   216→        return 0
+   217→    fi
+   218→
+   219→    if settings put "$namespace" "$key" "$value" 2>/dev/null; then
+   220→        :
+   221→    else
+   222→        log_msg "[warn] settings put 失败: $namespace.$key=$value" "[warn]"
+   223→    fi
+   224→    return 0
+   225→}
+   226→
+   227→se_get() {
+   228→    settings get "$1" "$2" 2>/dev/null
+   229→}
+   230→
+   231→se_del() {
+   232→    settings delete "$1" "$2" 2>/dev/null
+   233→    return 0
+   234→}
+   235→
+   236→# ----------------------------------------------------------------------
+   237→# 网络就绪检测
+   238→# ----------------------------------------------------------------------
+   239→wait_network_ready() {
+   240→    local max_wait="${1:-$NETWORK_READY_TIMEOUT}"
+   241→    case "$max_wait" in
+   242→        ''|*[!0-9]*) max_wait=10 ;;
+   243→    esac
+   244→    [ "$max_wait" -lt 1 ] 2>/dev/null && max_wait=1
+   245→    [ "$max_wait" -gt 60 ] 2>/dev/null && max_wait=60
+   246→
+   247→    local start end
+   248→    start=$(date +%s 2>/dev/null || echo 0)
+   249→    while :; do
+   250→        end=$(date +%s 2>/dev/null || echo 0)
+   251→        [ $((end - start)) -ge "$max_wait" ] 2>/dev/null && return 1
+   252→
+   253→        local active_net
+   254→        active_net=$(dumpsys connectivity 2>/dev/null | grep 'NetworkAgentInfo' | grep -E 'state=CONNECTED|VALIDATED' | head -1)
+   255→        if [ -n "$active_net" ]; then
+   256→            return 0
+   257→        fi
+   258→        if ping -c 1 -W 1 223.5.5.5 >/dev/null 2>&1 || \
+   259→           ping -c 1 -W 1 119.29.29.29 >/dev/null 2>&1; then
+   260→            return 0
+   261→        fi
+   262→        sleep 1
+   263→    done
+   264→    return 1
+   265→}
+   266→
+   267→# ----------------------------------------------------------------------
+   268→# 运行环境检测
+   269→# ----------------------------------------------------------------------
+   270→detect_env() {
+   271→    if [ "${AXERON:-}" = "true" ]; then
+   272→        echo "axeron"
+   273→    elif [ -d "/data/adb/ksu" ] 2>/dev/null; then
+   274→        echo "ksu"
+   275→    elif [ -d "/data/adb/magisk" ] 2>/dev/null; then
+   276→        echo "magisk"
+   277→    elif [ -d "/data/adb/ap" ] 2>/dev/null; then
+   278→        echo "apatch"
+   279→    else
+   280→        echo "unknown"
+   281→    fi
+   282→}
+   283→
+   284→is_axeron_env() {
+   285→    [ "${AXERON:-}" = "true" ]
+   286→}
+   287→
+   288→# ----------------------------------------------------------------------
+   289→# 网络类型检测（v6.3.0: 增强 dumpsys 解析兼容性）
+   290→# ----------------------------------------------------------------------
+   291→se_detect_network_type() {
+   292→    local dump
+   293→    dump=$(dumpsys connectivity 2>/dev/null)
+   294→
+   295→    local wifi_conn=""
+   296→    local mobile_conn=""
+   297→
+   298→    # 多种匹配模式兼容不同 ROM
+   299→    # 标准 AOSP: NetworkAgentInfo{ WIFI {... state=CONNECTED ...}}
+   300→    # MIUI: 可能为 WIFI {... VALIDATED ...}
+   301→    # ColorOS: NetworkAgentInfo{ WIFI {... state=CONNECTED ...}}
+   302→    if echo "$dump" | grep -qE 'NetworkAgentInfo.*WIFI.*(state=CONNECTED|VALIDATED|CONNECTED.*VALIDATED)'; then
+   303→        wifi_conn=1
+   304→    elif echo "$dump" | grep -qE 'WIFI.*state=CONNECTED'; then
+   305→        wifi_conn=1
+   306→    fi
+   307→
+   308→    if echo "$dump" | grep -qE 'NetworkAgentInfo.*MOBILE.*(state=CONNECTED|VALIDATED|CONNECTED.*VALIDATED)'; then
+   309→        mobile_conn=1
+   310→    elif echo "$dump" | grep -qE 'MOBILE.*state=CONNECTED'; then
+   311→        mobile_conn=1
+   312→    fi
+   313→
+   314→    if [ -n "$wifi_conn" ] && [ -n "$mobile_conn" ]; then
+   315→        echo "dual"
+   316→    elif [ -n "$wifi_conn" ]; then
+   317→        echo "wifi"
+   318→    elif [ -n "$mobile_conn" ]; then
+   319→        echo "mobile"
+   320→    else
+   321→        echo "none"
+   322→    fi
+   323→}
+   324→
+   325→# ----------------------------------------------------------------------
+   326→# 运营商自动识别
+   327→# ----------------------------------------------------------------------
+   328→se_detect_carrier() {
+   329→    local mccmnc
+   330→    mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
+   331→    [ -z "$mccmnc" ] && mccmnc=$(getprop gsm.operator.numeric 2>/dev/null | head -1)
+   332→    case "$mccmnc" in
+   333→        46011|46012)                              echo "telecom" ;;
+   334→        46001|46006|46009)                        echo "unicom" ;;
+   335→        46000|46002|46004|46007|46008|46013|46015|46017) echo "mobile" ;;
+   336→        46020)                                    echo "ctn" ;;
+   337→        *)                                        echo "auto" ;;
+   338→    esac
+   339→}
+   340→
+   341→# ----------------------------------------------------------------------
+   342→# v6.3.0: WiFi RSSI 读取（多 ROM 兼容增强）
+   343→# ----------------------------------------------------------------------
+   344→# 原 v6.2.0 仅匹配 'mRssi:'，在部分 ROM 上字段名/缩进不同
+   345→# v6.3.0 新增多种匹配模式：
+   346→#   - 标准 AOSP: dumpsys wifi 输出含 'mRssi: -65'
+   347→#   - MIUI/HyperOS: 可能为 'mRssi=-65' 或 'RSSI: -65'
+   348→#   - ColorOS: 'mRssi: -65'
+   349→#   - 部分 ROM: dumpsys wifi | grep 'WifiInfo' 行内含 RSSI
+   350→se_get_wifi_rssi() {
+   351→    local dump result
+   352→    dump=$(dumpsys wifi 2>/dev/null)
+   353→
+   354→    # 模式 1: mRssi: -65 (标准 AOSP)
+   355→    result=$(echo "$dump" | awk -F': ' '/^[[:space:]]*mRssi:/ {gsub(/[^0-9-].*/, "", $2); print $2; exit}' 2>/dev/null)
+   356→    [ -n "$result" ] && { echo "$result"; return 0; }
+   357→
+   358→    # 模式 2: mRssi=-65 (部分 ROM 用等号)
+   359→    result=$(echo "$dump" | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+   360→    [ -n "$result" ] && { echo "$result"; return 0; }
+   361→
+   362→    # 模式 3: RSSI: -65 (部分 ROM 简写)
+   363→    result=$(echo "$dump" | grep -oE 'RSSI: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+   364→    [ -n "$result" ] && { echo "$result"; return 0; }
+   365→
+   366→    # 模式 4: WifiInfo 行内 mRssi=-65
+   367→    result=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+   368→    [ -n "$result" ] && { echo "$result"; return 0; }
+   369→
+   370→    # 模式 5: cmd wifi status (Android 11+)
+   371→    result=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE '[-]?[0-9]+' | head -1)
+   372→    [ -n "$result" ] && { echo "$result"; return 0; }
+   373→
+   374→    # 全部失败
+   375→    echo ""
+   376→}
+   377→
+   378→# ----------------------------------------------------------------------
+   379→# v6.3.0: 移动信号 dBm 读取（多 ROM 兼容增强）
+   380→# ----------------------------------------------------------------------
+   381→se_get_mobile_dbm() {
+   382→    local reg dbm
+   383→    reg=$(dumpsys telephony.registry 2>/dev/null)
+   384→
+   385→    # 模式 1: mDbm=-95 (标准 AOSP，等号)
+   386→    dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+   387→    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+   388→
+   389→    # 模式 2: mDbm: -95 (部分 ROM 用冒号)
+   390→    dbm=$(echo "$reg" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+   391→    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+   392→
+   393→    # 模式 3: mSignalStrength 行内第一个负数
+   394→    dbm=$(echo "$reg" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
+   395→    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+   396→
+   397→    # 模式 4: grep -A 30 mSignalStrength 后找 mDbm
+   398→    dbm=$(echo "$reg" | grep -A 30 'mSignalStrength' 2>/dev/null | grep -E 'mDbm' | head -1 | grep -oE '[-]?[0-9]+' | head -1)
+   399→    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+   400→
+   401→    # 全部失败
+   402→    echo ""
+   403→}
+   404→
+   405→se_get_mobile_level() {
+   406→    local reg level
+   407→    reg=$(dumpsys telephony.registry 2>/dev/null)
+   408→
+   409→    # 模式 1: mLevel=3
+   410→    level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+   411→    [ -n "$level" ] && { echo "$level"; return 0; }
+   412→
+   413→    # 模式 2: mLevel: 3
+   414→    level=$(echo "$reg" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+   415→    [ -n "$level" ] && { echo "$level"; return 0; }
+   416→
+   417→    # 模式 3: grep -A 20 mSignalStrength
+   418→    level=$(echo "$reg" | grep -A 20 'mSignalStrength' 2>/dev/null | grep -E 'mLevel' | head -1 | grep -oE '[0-9]+' | head -1)
+   419→    [ -n "$level" ] && { echo "$level"; return 0; }
+   420→
+   421→    echo ""
+   422→}
+   423→
+   424→# ----------------------------------------------------------------------
+   425→# v6.3.3: 公网延迟检测（增强后台 nohup 环境容错）
+   426→# ----------------------------------------------------------------------
+   427→# v6.3.2 问题：调度器后台 nohup 子进程下 ping 命令可能因管道/权限问题
+   428→#             返回空，导致通知"延迟: ? ms"
+   429→# v6.3.3 修复：1. ping 失败时用 dumpsys pingstate/connectivity 兜底
+   430→#             2. 最后才返回 ?
+   431→se_get_ping_ms() {
+   432→    local result
+   433→
+   434→    # 方法 1: ping 阿里 DNS（前台/后台都尝试）
+   435→    result=$(ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+   436→    if [ -n "$result" ]; then
+   437→        echo "$result"
+   438→        return 0
+   439→    fi
+   440→
+   441→    # 方法 2: ping 腾讯 DNS
+   442→    result=$(ping -c 1 -W 2 119.29.29.29 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+   443→    if [ -n "$result" ]; then
+   444→        echo "$result"
+   445→        return 0
+   446→    fi
+   447→
+   448→    # 方法 3: ping 114 DNS
+   449→    result=$(ping -c 1 -W 2 114.114.114.114 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+   450→    if [ -n "$result" ]; then
+   451→        echo "$result"
+   452→        return 0
+   453→    fi
+   454→
+   455→    # v6.3.3: 方法 4 - ping 本地网关（后台环境兜底，几乎不会失败）
+   456→    local gateway
+   457→    gateway=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -1)
+   458→    if [ -n "$gateway" ]; then
+   459→        result=$(ping -c 1 -W 2 "$gateway" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+   460→        if [ -n "$result" ]; then
+   461→            echo "$result"
+   462→            return 0
+   463→        fi
+   464→    fi
+   465→
+   466→    echo "?"
+   467→    return 0
+   468→}
+   469→
+   470→# ----------------------------------------------------------------------
+   471→# 通知发送
+   472→# ----------------------------------------------------------------------
+   473→se_notify() {
+   474→    local title="$1"
+   475→    local body="$2"
+   476→    [ -z "$title" ] && return 0
+   477→    [ -z "$body" ] && body=" "
+   478→    cmd notification post -S bigtext -t "$title" "$SE_NOTIFY_TAG" "$body" >/dev/null 2>&1
+   479→    return 0
+   480→}
+   481→
+   482→se_notify_cancel() {
+   483→    cmd notification cancel "$SE_NOTIFY_TAG" >/dev/null 2>&1
+   484→    return 0
+   485→}
+   486→
+   487→# ----------------------------------------------------------------------
+   488→# 进程管理
+   489→# ----------------------------------------------------------------------
+   490→se_monitor_running() {
+   491→    [ -f "$SE_PID_FILE" ] || return 1
+   492→    local pid
+   493→    pid=$(cat "$SE_PID_FILE" 2>/dev/null)
+   494→    [ -n "$pid" ] || return 1
+   495→    kill -0 "$pid" 2>/dev/null
+   496→}
+   497→
+   498→se_monitor_pid() {
+   499→    [ -f "$SE_PID_FILE" ] || return 1
+   500→    cat "$SE_PID_FILE" 2>/dev/null
+   501→}
+   502→
+   503→# ======================================================================
+   504→# 动态参数计算引擎
+   505→# ======================================================================
+   506→se_clamp() {
+   507→    local v="$1" min="$2" max="$3"
+   508→    case "$v$min$max" in
+   509→        ''|*[!0-9-]*) echo "$min"; return ;;
+   510→    esac
+   511→    [ "$v" -lt "$min" ] 2>/dev/null && { echo "$min"; return; }
+   512→    [ "$v" -gt "$max" ] 2>/dev/null && { echo "$max"; return; }
+   513→    echo "$v"
+   514→}
+   515→
+   516→se_lerp() {
+   517→    local x="$1" x1="$2" y1="$3" x2="$4" y2="$5"
+   518→    local p
+   519→    for p in "$x" "$x1" "$y1" "$x2" "$y2"; do
+   520→        case "$p" in
+   521→            ''|*[!0-9-]*) echo "$y1"; return ;;
+   522→        esac
+   523→    done
+   524→    [ "$x" -le "$x1" ] 2>/dev/null && { echo "$y1"; return; }
+   525→    [ "$x" -ge "$x2" ] 2>/dev/null && { echo "$y2"; return; }
+   526→    awk -v x="$x" -v x1="$x1" -v y1="$y1" -v x2="$x2" -v y2="$y2" \
+   527→        'BEGIN { printf "%d", y1 + (y2-y1)*(x-x1)/(x2-x1) }' 2>/dev/null || echo "$y1"
+   528→}
+   529→
+   530→se_wifi_level() {
+   531→    local rssi
+   532→    rssi=$(se_get_wifi_rssi)
+   533→    # v6.3.1: 空值容错
+   534→    if [ -z "$rssi" ] || [ "$rssi" = "?" ]; then
+   535→        echo "unknown"
+   536→        return 0
+   537→    fi
+   538→
+   539→    # v6.3.1: 严格数值校验
+   540→    local abs_rssi=""
+   541→    case "$rssi" in
+   542→        ''|*[!0-9-]*) echo "unknown"; return 0 ;;
+   543→    esac
+   544→    if [ "$rssi" -lt 0 ] 2>/dev/null; then
+   545→        abs_rssi=$((-rssi))
+   546→    elif [ "$rssi" -gt 0 ] 2>/dev/null; then
+   547→        abs_rssi="$rssi"
+   548→    else
+   549→        echo "unknown"
+   550→        return 0
+   551→    fi
+   552→
+   553→    if [ "$abs_rssi" -lt "$WIFI_STRONG_RSSI" ] 2>/dev/null; then
+   554→        echo "strong"
+   555→    elif [ "$abs_rssi" -lt "$WIFI_WEAK_RSSI" ] 2>/dev/null; then
+   556→        echo "normal"
+   557→    else
+   558→        echo "weak"
+   559→    fi
+   560→    return 0
+   561→}
+   562→
+   563→se_mobile_level() {
+   564→    local mlevel
+   565→    mlevel=$(se_get_mobile_level)
+   566→    if [ -n "$mlevel" ]; then
+   567→        case "$mlevel" in
+   568→            4)         echo "strong"; return 0 ;;
+   569→            2|3)       echo "normal"; return 0 ;;
+   570→            0|1)       echo "weak"; return 0 ;;
+   571→            *)         echo "normal"; return 0 ;;
+   572→        esac
+   573→    fi
+   574→
+   575→    local dbm abs_dbm
+   576→    dbm=$(se_get_mobile_dbm)
+   577→    # v6.3.1: 空值容错（无 SIM 卡场景）
+   578→    if [ -z "$dbm" ] || [ "$dbm" = "?" ]; then
+   579→        echo "unknown"
+   580→        return 0
+   581→    fi
+   582→    case "$dbm" in
+   583→        ''|*[!0-9-]*) echo "unknown"; return 0 ;;
+   584→    esac
+   585→    if [ "$dbm" -lt 0 ] 2>/dev/null; then
+   586→        abs_dbm=$((-dbm))
+   587→    elif [ "$dbm" -gt 0 ] 2>/dev/null; then
+   588→        abs_dbm="$dbm"
+   589→    else
+   590→        echo "unknown"
+   591→        return 0
+   592→    fi
+   593→
+   594→    if [ "$abs_dbm" -lt "$MOBILE_STRONG_DBM" ] 2>/dev/null; then
+   595→        echo "strong"
+   596→    elif [ "$abs_dbm" -le "$MOBILE_WEAK_DBM" ] 2>/dev/null; then
+   597→        echo "normal"
+   598→    else
+   599→        echo "weak"
+   600→    fi
+   601→    return 0
+   602→}
+   603→
+   604→se_overall_level() {
+   605→    local net_type="$1" wifi_lvl="$2" mobile_lvl="$3" ping_ms="$4"
+   606→
+   607→    local ping_critical=0 ping_bad=0
+   608→    if [ "$ENABLE_PING_FEEDBACK" = "true" ] && [ "$ping_ms" != "?" ]; then
+   609→        case "$ping_ms" in
+   610→            ''|*[!0-9]*) ;;
+   611→            *)
+   612→                [ "$ping_ms" -ge "$PING_BAD_MS" ] 2>/dev/null && ping_critical=1
+   613→                [ "$ping_ms" -ge "$PING_GOOD_MS" ] 2>/dev/null && [ "$ping_ms" -lt "$PING_BAD_MS" ] 2>/dev/null && ping_bad=1
+   614→                ;;
+   615→        esac
+   616→    fi
+   617→
+   618→    local base_level
+   619→    case "$net_type" in
+   620→        wifi)   base_level="$wifi_lvl" ;;
+   621→        mobile) base_level="$mobile_lvl" ;;
+   622→        dual)
+   623→            if [ "$wifi_lvl" = "weak" ] || [ "$mobile_lvl" = "weak" ]; then
+   624→                base_level="weak"
+   625→            elif [ "$wifi_lvl" = "strong" ] && [ "$mobile_lvl" = "strong" ]; then
+   626→                base_level="strong"
+   627→            else
+   628→                base_level="normal"
+   629→            fi
+   630→            ;;
+   631→        *)      base_level="normal" ;;
+   632→    esac
+   633→
+   634→    if [ "$ping_critical" = "1" ]; then
+   635→        if [ "$base_level" = "weak" ]; then
+   636→            echo "critical"
+   637→        else
+   638→            echo "weak"
+   639→        fi
+   640→        return
+   641→    fi
+   642→    if [ "$ping_bad" = "1" ] && [ "$base_level" = "strong" ]; then
+   643→        echo "normal"
+   644→        return
+   645→    fi
+   646→    echo "$base_level"
+   647→}
+   648→
+   649→se_compute_dynamic_params() {
+   650→    local level="$1"
+   651→    local rssi_abs="$2"
+   652→
+   653→    local interval scan_ms bad_rssi mobile_ka ping_chk
+   654→
+   655→    # v6.3.3: 默认值兜底,确保变量永远非空
+   656→    interval="${MONITOR_NORMAL_INTERVAL:-600}"
+   657→    scan_ms=15000
+   658→    bad_rssi=-88
+   659→    mobile_ka=1
+   660→    ping_chk=1
+   661→
+   662→    case "$level" in
+   663→        strong)
+   664→            interval="${MONITOR_MAX_INTERVAL:-900}"; scan_ms=30000; bad_rssi=-70;  mobile_ka=1; ping_chk=0 ;;
+   665→        normal)
+   666→            interval="${MONITOR_NORMAL_INTERVAL:-600}"; scan_ms=15000; bad_rssi=-88;  mobile_ka=1; ping_chk=1 ;;
+   667→        weak)
+   668→            interval="${MONITOR_MIN_INTERVAL:-300}"; scan_ms=10000; bad_rssi=-95;  mobile_ka=1; ping_chk=1 ;;
+   669→        critical)
+   670→            interval="${MONITOR_MIN_INTERVAL:-300}"; scan_ms=8000;  bad_rssi=-100; mobile_ka=1; ping_chk=1 ;;
+   671→        *)
+   672→            interval="${MONITOR_NORMAL_INTERVAL:-600}"; scan_ms=15000; bad_rssi=-88;  mobile_ka=1; ping_chk=1 ;;
+   673→    esac
+   674→
+   675→    # v6.3.3: 动态插值前严格校验 rssi_abs 是正整数
+   676→    if [ "$ENABLE_DYNAMIC_PARAMS" = "true" ] && [ "$level" != "critical" ]; then
+   677→        case "$rssi_abs" in
+   678→            ''|*[!0-9]*)
+   679→                # rssi_abs 非正整数,跳过插值,用默认值
+   680→                ;;
+   681→            *)
+   682→                if [ "$rssi_abs" -gt 0 ] 2>/dev/null; then
+   683→                    local rssi_clamped
+   684→                    rssi_clamped=$(se_clamp "$rssi_abs" 40 100)
+   685→                    # v6.3.3: 确保 se_lerp 返回非空
+   686→                    local _new_scan _new_bad
+   687→                    _new_scan=$(se_lerp "$rssi_clamped" 40 30000 100 8000)
+   688→                    _new_bad=$(se_lerp "$rssi_clamped" 40 -65 100 -100)
+   689→                    [ -n "$_new_scan" ] && scan_ms="$_new_scan"
+   690→                    [ -n "$_new_bad" ] && bad_rssi="$_new_bad"
+   691→                fi
+   692→                ;;
+   693→        esac
+   694→    fi
+   695→
+   696→    # v6.3.3: 最终输出前再次确保所有字段非空
+   697→    [ -z "$interval" ] && interval=600
+   698→    [ -z "$scan_ms" ] && scan_ms=15000
+   699→    [ -z "$bad_rssi" ] && bad_rssi=-88
+   700→    [ -z "$mobile_ka" ] && mobile_ka=1
+   701→    [ -z "$ping_chk" ] && ping_chk=1
+   702→
+   703→    echo "${interval} ${scan_ms} ${bad_rssi} ${mobile_ka} ${ping_chk}"
+   704→    return 0
+   705→}
+   706→
+   707→# ----------------------------------------------------------------------
+   708→# 模块自检（v6.3.0: 用 pwd + AXERONDIR 双重确认）
+   709→# ----------------------------------------------------------------------
+   710→se_self_check() {
+   711→    echo "=== 卫星地球 Pro v${SE_VERSION} 自检 ==="
+   712→    echo ""
+   713→    echo "[环境]"
+   714→    echo "  引擎       : $(detect_env)"
+   715→    echo "  AXERON     : ${AXERON:-未设置}"
+   716→    echo "  AXERONVER  : ${AXERONVER:-未知}"
+   717→    echo "  AXERONDIR  : ${AXERONDIR:-未设置}"
+   718→    echo "  API        : ${API:-未设置} (实测 $(getprop ro.build.version.sdk 2>/dev/null | head -1))"
+   719→    echo "  ARCH       : ${ARCH:-未知} (实测 $(getprop ro.product.cpu.abi 2>/dev/null | head -1))"
+   720→    echo "  MODPATH    : ${MODPATH:-未设置}"
+   721→    echo "  MODDIR_ROOT: ${MODDIR_ROOT:-未解析}"
+   722→    echo "  pwd        : $(pwd 2>/dev/null)"
+   723→    echo "  \$0         : ${0:-空}"
+   724→    echo ""
+   725→
+   726→    # v6.3.0: 重新解析一次，确认 MODDIR_ROOT 有效
+   727→    if [ -z "${MODDIR_ROOT:-}" ] || [ ! -d "${MODDIR_ROOT:-}" ]; then
+   728→        echo "[!] MODDIR_ROOT 无效，尝试重新解析..."
+   729→        MODDIR_ROOT="$(se_resolve_moddir 2>/dev/null)" || MODDIR_ROOT=""
+   730→        MODDIR="$MODDIR_ROOT"
+   731→    fi
+   732→
+   733→    local check_dir="${MODDIR_ROOT:-${MODPATH:-${MODDIR:-}}}"
+   734→    echo "[关键文件] (检查目录: $check_dir)"
+   735→    if [ -n "$check_dir" ] && [ -d "$check_dir" ]; then
+   736→        for f in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh config.sh system.prop LICENSE; do
+   737→            if [ -f "$check_dir/$f" ]; then
+   738→                echo "  [OK] $f"
+   739→            else
+   740→                echo "  [缺失] $f"
+   741→            fi
+   742→        done
+   743→        for f in scripts/common.sh scripts/oem_compat.sh scripts/wifi.sh scripts/carrier.sh scripts/dns.sh scripts/weaknet.sh scripts/monitor.sh scripts/network_info.sh webroot/index.html; do
+   744→            if [ -f "$check_dir/$f" ]; then
+   745→                echo "  [OK] $f"
+   746→            else
+   747→                echo "  [缺失] $f"
+   748→            fi
+   749→        done
+   750→    else
+   751→        echo "  [!] 检查目录不存在或不可访问"
+   752→        echo "  尝试手动诊断:"
+   753→        echo "    pwd = $(pwd 2>/dev/null)"
+   754→        echo "    AXERONDIR = ${AXERONDIR:-未设置}"
+   755→        echo "    ls /data/user_de/0/com.android.shell/axeron/plugins/ 2>/dev/null:"
+   756→        ls /data/user_de/0/com.android.shell/axeron/plugins/ 2>/dev/null | head -5 | sed 's/^/      /'
+   757→    fi
+   758→    echo ""
+   759→
+   760→    # OEM 兼容性信息
+   761→    if [ "$(type -t se_show_oem_info 2>/dev/null)" = "function" ]; then
+   762→        se_show_oem_info
+   763→    fi
+   764→
+   765→    echo "[关键 settings 写入验证]"
+   766→    echo "  wifi_scan_throttle_enabled      = $(se_get global wifi_scan_throttle_enabled) (期望 0)"
+   767→    echo "  wifi_suspend_optimizations_enabled = $(se_get global wifi_suspend_optimizations_enabled) (期望 0)"
+   768→    echo "  mobile_data_always_on           = $(se_get global mobile_data_always_on) (期望 1)"
+   769→    echo "  private_dns_mode                = $(se_get global private_dns_mode)"
+   770→    echo ""
+   771→    echo "[动态参数引擎]"
+   772→    echo "  ENABLE_DYNAMIC_PARAMS = ${ENABLE_DYNAMIC_PARAMS}"
+   773→    echo "  ENABLE_PING_FEEDBACK  = ${ENABLE_PING_FEEDBACK}"
+   774→    echo "  ENABLE_OEM_COMPAT     = ${ENABLE_OEM_COMPAT}"
+   775→    echo ""
+   776→    echo "[实时信号]"
+   777→    local rssi dbm ping_ms
+   778→    rssi=$(se_get_wifi_rssi)
+   779→    dbm=$(se_get_mobile_dbm)
+   780→    ping_ms=$(se_get_ping_ms)
+   781→    echo "  WiFi RSSI      : ${rssi:-未连接}"
+   782→    echo "  移动 dBm       : ${dbm:-未检测}"
+   783→    echo "  公网延迟       : ${ping_ms} ms"
+   784→    echo ""
+   785→    echo "[调度器]"
+   786→    if se_monitor_running; then
+   787→        echo "  状态       : 运行中 (PID=$(se_monitor_pid))"
+   788→    else
+   789→        echo "  状态       : 未运行"
+   790→    fi
+   791→    echo ""
+   792→    echo "[日志]"
+   793→    if [ -f "$SE_LOG_FILE" ]; then
+   794→        local size lines
+   795→        size=$(wc -c < "$SE_LOG_FILE" 2>/dev/null)
+   796→        lines=$(wc -l < "$SE_LOG_FILE" 2>/dev/null)
+   797→        echo "  路径       : $SE_LOG_FILE"
+   798→        echo "  大小       : ${size} 字节 (${lines} 行)"
+   799→    else
+   800→        echo "  日志文件不存在"
+   801→    fi
+   802→}
+   803→

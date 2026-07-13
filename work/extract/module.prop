@@ -1,0 +1,8 @@
+id=Satellite_Earth
+name=卫星地球 优化版 Pro (中国大陆) v1.0 数据传递修复版
+version=1.0
+versionCode=100
+author=寒碑听风
+description=AxManager 免Root 网络优化 v1.0 | 修复调度器后台ping超时(多DNS+网关兜底) | 修复动态参数写入(子shell变量隔离+se_compute_dynamic_params直算) | settings写入后台化不阻塞主循环 | 严格遵循 AxManager 官方插件协议
+banner=banner.png
+axeronPlugin=10000

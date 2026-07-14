@@ -73,6 +73,9 @@ se_should_verify_write() {
         huawei|honor)
             return 0  # 需要写入验证（S3 Reddit 反馈部分版本受限）
             ;;
+        samsung)
+            return 0  # 修改点: 三星纳入验证（S3 "部分版本会忽略" 更隐蔽）
+            ;;
         *)
             return 1  # 已知可用
             ;;
@@ -260,9 +263,11 @@ se_put_safe() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 3: 带验证的安全写入封装（华为/荣耀专用）
+# 修改点 3: 带验证的安全写入封装（华为/荣耀/三星专用）
 # ----------------------------------------------------------------------
-# 用户细节提醒 3: 华为/荣耀品牌必须调用 se_put_verify 而非 se_put
+# 用户细节提醒 1: se_put_verify 改为循环验证 3 次
+# 用户细节提醒 3: 华为/荣耀/三星品牌必须调用 se_put_verify 而非 se_put
+# 用户细节问题 1: 其他品牌必须走 se_put (保留 OEM 过滤), 不能直接 settings put
 # 此函数封装了 OEM 兼容性过滤 + 写入验证的完整流程
 # 用法: se_put_safe_verify global preferred_network_mode 11
 se_put_safe_verify() {
@@ -275,9 +280,9 @@ se_put_safe_verify() {
 
     case "$support" in
         0)
-            # 可安全写入 - 对华为/荣耀品牌使用 se_put_verify
+            # 可安全写入
             if se_should_verify_write; then
-                # 华为/荣耀: 写入并验证
+                # 华为/荣耀/三星: 写入并循环验证
                 if se_put_verify "$namespace" "$key" "$value"; then
                     log_msg "[oem-verify] $namespace.$key=$value 写入验证成功 (brand=${SE_BRAND:-?})" "[oem]"
                 else
@@ -286,12 +291,8 @@ se_put_safe_verify() {
                     touch "/data/local/tmp/network_enhance_pnm_restricted_${SE_BRAND:-unknown}" 2>/dev/null
                 fi
             else
-                # 其他品牌: 直接写入
-                if settings put "$namespace" "$key" "$value" 2>/dev/null; then
-                    :
-                else
-                    log_msg "[oem] 写入失败: $namespace.$key=$value" "[warn]"
-                fi
+                # 修改点: 其他品牌走标准 OEM 过滤写入（保留 nr_sa_mode→nr_mode 等替换逻辑）
+                se_put "$namespace" "$key" "$value"
             fi
             return 0
             ;;
@@ -381,7 +382,7 @@ se_show_oem_info() {
 
     # 是否需要写入验证
     if se_should_verify_write; then
-        echo "  写入验证    : ON 华为/荣耀品牌, 启用写入验证"
+        echo "  写入验证    : ON 华为/荣耀/三星品牌, 启用写入验证"
     else
         echo "  写入验证    : OFF 已知可用品牌, 直接写入"
     fi

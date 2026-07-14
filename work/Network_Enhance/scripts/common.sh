@@ -283,7 +283,8 @@ se_del() {
 # ----------------------------------------------------------------------
 # settings 写入并验证（修改点 4: 用户补充要求 4 华为/荣耀验证机制）
 # ----------------------------------------------------------------------
-# 写入后立即读回验证, 失败则记录日志并返回 1
+# 写入后循环读回验证, 最多 3 秒, 失败则记录日志并返回 1
+# 用户细节提醒 1: settings 命令写入后系统服务同步可能有延迟, 循环验证更健壮
 # 用于关键 settings (如 preferred_network_mode) 在华为/荣耀等受限品牌上的可靠性验证
 se_put_verify() {
     local namespace="$1"
@@ -291,16 +292,19 @@ se_put_verify() {
     local value="$3"
 
     se_put "$namespace" "$key" "$value"
-    sleep 0.5 2>/dev/null || sleep 1
 
-    local verify
-    verify=$(se_get "$namespace" "$key" 2>/dev/null)
-    if [ "$verify" = "$value" ]; then
-        return 0
-    else
-        log_msg "[verify] 写入验证失败: $namespace.$key=$value (实际=$verify, brand=${SE_BRAND:-?})" "[warn]"
-        return 1
-    fi
+    local verify=""
+    local i
+    for i in 1 2 3; do
+        sleep 1 2>/dev/null
+        verify=$(se_get "$namespace" "$key" 2>/dev/null)
+        if [ "$verify" = "$value" ]; then
+            return 0
+        fi
+    done
+
+    log_msg "[verify] 写入验证失败: $namespace.$key=$value (实际=${verify:-空}, brand=${SE_BRAND:-?})" "[warn]"
+    return 1
 }
 
 # ----------------------------------------------------------------------

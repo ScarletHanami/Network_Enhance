@@ -693,6 +693,23 @@ function loadNetworkInfo() {
       nrBadge.className = 'badge ok';
       fake5gWarn.className = 'fake5g-warn';
     }
+
+    // 修改点: 同步驱动调度器区块的 5G降级状态 (mon-fake5g)
+    // 解决 loadMonitorStatus 依赖 state 文件导致空白的问题
+    // 即使调度器未运行, 也能从 JSON 的 fake_5g_active 字段获取状态
+    var monFake5gEl = document.getElementById('mon-fake5g');
+    if (monFake5gEl) {
+      if (isFake5gActive) {
+        monFake5gEl.textContent = '⚠ 已降级4G';
+        monFake5gEl.className = 'stat-value small warn';
+      } else if (isFake5g) {
+        monFake5gEl.textContent = '⚠ 检测到假满格';
+        monFake5gEl.className = 'stat-value small warn';
+      } else {
+        monFake5gEl.textContent = '正常';
+        monFake5gEl.className = 'stat-value small good';
+      }
+    }
   });
 }
 

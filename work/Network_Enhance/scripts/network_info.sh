@@ -544,18 +544,20 @@ show_json() {
     [ -z "$nr_rsrq" ] && nr_rsrq="无"
 
     # 修改点: fake_5g 改为字符串 "0"/"1", 默认 "0" (正常)
-    if se_detect_fake_5g; then
+    # 强化兜底: 函数执行失败也确保 fake_5g 有值
+    fake_5g="0"
+    if se_detect_fake_5g 2>/dev/null; then
         fake_5g="1"
-    else
-        fake_5g="0"
     fi
 
-    # 修改点: 从状态文件读取 5G 降级状态, 文件不存在时默认 "0"
-    local state_fake_5g="0"
-    if [ -f "$SE_STATE_FILE" ]; then
-        state_fake_5g=$(grep '^FAKE_5G_ACTIVE=' "$SE_STATE_FILE" 2>/dev/null | cut -d= -f2)
-        [ -z "$state_fake_5g" ] && state_fake_5g="0"
-    fi
+    # 修改点: 从状态文件读取 5G 降级状态, 文件不存在或字段缺失时默认 "0"
+    # 强化兜底: 用子 shell + 双重默认值, 防止 cat/grep 报错导致 JSON 中断
+    local state_fake_5g
+    state_fake_5g=$(cat "$SE_STATE_FILE" 2>/dev/null | grep '^FAKE_5G_ACTIVE=' 2>/dev/null | cut -d= -f2)
+    case "$state_fake_5g" in
+        1) state_fake_5g="1" ;;
+        *) state_fake_5g="0" ;;  # 空值/0/异常值统一为 "0"
+    esac
 
     # 修改点: 新增 preferred_network_mode 字段 (网络制式)
     pnm_mode=$(se_get global preferred_network_mode 2>/dev/null)

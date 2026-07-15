@@ -360,8 +360,11 @@ is_axeron_env() {
 }
 
 # ----------------------------------------------------------------------
-# 网络类型检测（保留 v6.3.0 增强 dumpsys 解析兼容性）
+# 网络类型检测（保留 v6.3.0 增强 dumpsys 解析兼容性 + 新增 getprop fallback）
 # ----------------------------------------------------------------------
+# 修改点: 新增 getprop gsm.network.type fallback
+#   真实输出: NR_SA,Unknown (含 NR 则判定为 5G 移动网络)
+#   来源: realme RMX5010 Android 16 API 36 实测
 se_detect_network_type() {
     local dump
     dump=$(dumpsys connectivity 2>/dev/null)
@@ -388,7 +391,28 @@ se_detect_network_type() {
     elif [ -n "$mobile_conn" ]; then
         echo "mobile"
     else
-        echo "none"
+        # 修改点: dumpsys connectivity 解析失败时, fallback 到 getprop gsm.network.type
+        # 真实输出: NR_SA,Unknown → 含 NR 判定为 mobile (5G)
+        # 来源: realme RMX5010 Android 16 API 36 实测
+        local net_type_prop
+        net_type_prop=$(getprop gsm.network.type 2>/dev/null | head -1)
+        case "$net_type_prop" in
+            *NR*|*nr*|*LTE*|*lte*|*HSDPA*|*HSUPA*|*HSPA*|*UMTS*|*EDGE*|*GPRS*|*CDMA*|*EvDo*|*TDSCDMA*)
+                echo "mobile"
+                return 0
+                ;;
+            *)
+                # 进一步检查 WiFi 状态
+                local wifi_state
+                wifi_state=$(cmd wifi status 2>/dev/null | grep -i 'Wi-Fi is' | head -1)
+                if echo "$wifi_state" | grep -qi 'connected\|enabled'; then
+                    echo "wifi"
+                    return 0
+                fi
+                echo "none"
+                return 0
+                ;;
+        esac
     fi
 }
 
@@ -490,21 +514,28 @@ se_get_mobile_dbm() {
     local reg dbm
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
+    # 修改点: 新增 Android 14+ 格式 + 无效值过滤 (2147483647 = Integer.MAX_VALUE)
+    # 来源: realme RMX5010 Android 16 API 36 实测
+
     # 模式 1: mDbm=-95 (标准 AOSP，等号)
     dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+    [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+    # 模式 1b: dbm = -95 (Android 14+ 新格式, 等号两边有空格)
+    dbm=$(echo "$reg" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
     # 模式 2: mDbm: -95 (部分 ROM 用冒号)
     dbm=$(echo "$reg" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
-    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+    [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
     # 模式 3: mSignalStrength 行内第一个负数
     dbm=$(echo "$reg" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
-    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+    [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
 
     # 模式 4: grep -A 30 mSignalStrength 后找 mDbm
-    dbm=$(echo "$reg" | grep -A 30 'mSignalStrength' 2>/dev/null | grep -E 'mDbm' | head -1 | grep -oE '[-]?[0-9]+' | head -1)
-    [ -n "$dbm" ] && { echo "$dbm"; return 0; }
+    dbm=$(echo "$reg" | grep -A 30 'mSignalStrength' 2>/dev/null | grep -E 'mDbm|dbm =' | head -1 | grep -oE '[-]?[0-9]+' | head -1)
+    [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
 
     # 全部失败
     echo ""
@@ -514,17 +545,33 @@ se_get_mobile_level() {
     local reg level
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 模式 1: mLevel=3
-    level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$level" ] && { echo "$level"; return 0; }
+    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 真实输出: ssRsrp = -97 ssRsrq = -11 ssSinr = 8 level = 4 (在 mNr 块内)
+    # 来源: realme RMX5010 Android 16 API 36 实测
+    # 模式 0: mNr 块内的 level = 4 (Android 14+ 5G 等级, 优先)
+    #   通过 sed 提取 mNr 块到下一个 m 开头字段之间, 再 grep level
+    local nr_block
+    nr_block=$(echo "$reg" | sed -n '/mNr/,/^  m[A-Z]/p' 2>/dev/null)
+    if [ -n "$nr_block" ]; then
+        level=$(echo "$nr_block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+    fi
 
-    # 模式 2: mLevel: 3
+    # 模式 1: mLevel=3 (旧 AOSP 格式)
+    level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+    # 模式 1b: mLevel: 3 (部分 ROM 用冒号)
     level=$(echo "$reg" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
-    [ -n "$level" ] && { echo "$level"; return 0; }
+    [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+    # 模式 2: level = 3 (Android 14+ 全局 level, 可能是 4G/3G)
+    level=$(echo "$reg" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
     # 模式 3: grep -A 20 mSignalStrength
-    level=$(echo "$reg" | grep -A 20 'mSignalStrength' 2>/dev/null | grep -E 'mLevel' | head -1 | grep -oE '[0-9]+' | head -1)
-    [ -n "$level" ] && { echo "$level"; return 0; }
+    level=$(echo "$reg" | grep -A 20 'mSignalStrength' 2>/dev/null | grep -E 'mLevel|level =' | head -1 | grep -oE '[0-9]+' | head -1)
+    [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
     echo ""
 }
@@ -548,21 +595,36 @@ se_get_nr_rsrp() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 模式 1: mSsRsrp=-95 (5G SS-RSRP, AOSP 标准, S3)
+    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 真实输出: ssRsrp = -97 ssRsrq = -11 ssSinr = 8 level = 4
+    # 来源: realme RMX5010 Android 16 API 36 实测
+    # 模式 1: ssRsrp = -97 (Android 14+ 新格式)
+    result=$(echo "$reg" | grep -oE 'ssRsrp = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 2: mSsRsrp=-95 (5G SS-RSRP, AOSP 旧格式, S3)
     result=$(echo "$reg" | grep -oE 'mSsRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mCsiRsrp=-95 (5G CSI-RSRP, AOSP 标准, S3)
+    # 模式 3: mCsiRsrp=-95 (5G CSI-RSRP, AOSP 标准, S3)
     result=$(echo "$reg" | grep -oE 'mCsiRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mLteRsrp=-95 (4G LTE RSRP, 5G 不可用时回退, S3)
+    # 模式 3b: csiRsrp = -97 (Android 14+ CSI-RSRP 新格式)
+    result=$(echo "$reg" | grep -oE 'csiRsrp = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 4: mLteRsrp=-95 (4G LTE RSRP, 5G 不可用时回退, S3)
     result=$(echo "$reg" | grep -oE 'mLteRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 4: mDbm=-95 (旧 AOSP 兜底)
+    # 模式 4b: lteRsrp = -97 (Android 14+ LTE-RSRP 新格式)
+    result=$(echo "$reg" | grep -oE 'lteRsrp = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 5: mDbm=-95 (旧 AOSP 兜底)
     result=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
     # 全部失败
     echo ""
@@ -573,17 +635,32 @@ se_get_nr_sinr() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 模式 1: mSsSinr=13 (5G SS-SINR, AOSP 标准, S3)
+    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 真实输出: ssSinr = 8
+    # 来源: realme RMX5010 Android 16 API 36 实测
+    # 模式 1: ssSinr = 8 (Android 14+ 新格式)
+    result=$(echo "$reg" | grep -oE 'ssSinr = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 2: mSsSinr=13 (5G SS-SINR, AOSP 旧格式, S3)
     result=$(echo "$reg" | grep -oE 'mSsSinr=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mCsiSinr=13 (5G CSI-SINR, S3)
+    # 模式 3: mCsiSinr=13 (5G CSI-SINR, S3)
     result=$(echo "$reg" | grep -oE 'mCsiSinr=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mLteRssnr=6 (4G SINR)
+    # 模式 3b: csiSinr = 8 (Android 14+ CSI-SINR 新格式)
+    result=$(echo "$reg" | grep -oE 'csiSinr = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 4: mLteRssnr=6 (4G SINR)
     result=$(echo "$reg" | grep -oE 'mLteRssnr=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 4b: lteRssnr = 6 (Android 14+ LTE-SINR 新格式)
+    result=$(echo "$reg" | grep -oE 'lteRssnr = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
     # 全部失败
     echo ""
@@ -594,17 +671,32 @@ se_get_nr_rsrq() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 模式 1: mSsRsrq=-10 (5G SS-RSRQ, AOSP 标准, S3)
+    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 真实输出: ssRsrq = -11
+    # 来源: realme RMX5010 Android 16 API 36 实测
+    # 模式 1: ssRsrq = -11 (Android 14+ 新格式)
+    result=$(echo "$reg" | grep -oE 'ssRsrq = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 2: mSsRsrq=-10 (5G SS-RSRQ, AOSP 旧格式, S3)
     result=$(echo "$reg" | grep -oE 'mSsRsrq=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mCsiRsrq=-10 (5G CSI-RSRQ, S3)
+    # 模式 3: mCsiRsrq=-10 (5G CSI-RSRQ, S3)
     result=$(echo "$reg" | grep -oE 'mCsiRsrq=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mLteRsrq=-10 (4G RSRQ)
+    # 模式 3b: csiRsrq = -11 (Android 14+ CSI-RSRQ 新格式)
+    result=$(echo "$reg" | grep -oE 'csiRsrq = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 4: mLteRsrq=-10 (4G RSRQ)
     result=$(echo "$reg" | grep -oE 'mLteRsrq=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
+
+    # 模式 4b: lteRsrq = -11 (Android 14+ LTE-RSRQ 新格式)
+    result=$(echo "$reg" | grep -oE 'lteRsrq = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
     # 全部失败
     echo ""

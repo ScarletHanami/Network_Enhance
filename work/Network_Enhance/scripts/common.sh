@@ -360,11 +360,14 @@ is_axeron_env() {
 }
 
 # ----------------------------------------------------------------------
-# 网络类型检测（保留 v6.3.0 增强 dumpsys 解析兼容性 + 新增 getprop fallback）
+# 网络类型检测（修改点: 直接返回 5G/4G/3G/2G/wifi/none, 避免 dual 中间态）
 # ----------------------------------------------------------------------
-# 修改点: 新增 getprop gsm.network.type fallback
-#   真实输出: NR_SA,Unknown (含 NR 则判定为 5G 移动网络)
-#   来源: realme RMX5010 Android 16 API 36 实测
+# 修改点: 用户反馈 "dual" 前端无法直观显示
+#   - dumpsys connectivity 解析失败时, 直接使用 getprop gsm.network.type fallback
+#   - 含 NR 返回 5G, 含 LTE 返回 4G, 含 HSPA/UMTS 返回 3G, 含 EDGE/GPRS 返回 2G
+#   - WiFi 连接返回 wifi
+#   - 避免返回 dual 这种前端无法直观显示的中间态
+# 来源: realme RMX5010 Android 16 API 36 实测反馈
 se_detect_network_type() {
     local dump
     dump=$(dumpsys connectivity 2>/dev/null)
@@ -384,36 +387,50 @@ se_detect_network_type() {
         mobile_conn=1
     fi
 
-    if [ -n "$wifi_conn" ] && [ -n "$mobile_conn" ]; then
-        echo "dual"
-    elif [ -n "$wifi_conn" ]; then
-        echo "wifi"
-    elif [ -n "$mobile_conn" ]; then
-        echo "mobile"
-    else
-        # 修改点: dumpsys connectivity 解析失败时, fallback 到 getprop gsm.network.type
-        # 真实输出: NR_SA,Unknown → 含 NR 判定为 mobile (5G)
-        # 来源: realme RMX5010 Android 16 API 36 实测
+    # 修改点: 双连接时优先返回移动网络制式 (5G/4G), 不再返回 dual
+    # 这样前端可以直接显示用户关心的网络制式
+    if [ -n "$mobile_conn" ]; then
+        # 移动网络已连接, 进一步判定 5G/4G/3G/2G
         local net_type_prop
         net_type_prop=$(getprop gsm.network.type 2>/dev/null | head -1)
         case "$net_type_prop" in
-            *NR*|*nr*|*LTE*|*lte*|*HSDPA*|*HSUPA*|*HSPA*|*UMTS*|*EDGE*|*GPRS*|*CDMA*|*EvDo*|*TDSCDMA*)
-                echo "mobile"
-                return 0
-                ;;
-            *)
-                # 进一步检查 WiFi 状态
-                local wifi_state
-                wifi_state=$(cmd wifi status 2>/dev/null | grep -i 'Wi-Fi is' | head -1)
-                if echo "$wifi_state" | grep -qi 'connected\|enabled'; then
-                    echo "wifi"
-                    return 0
-                fi
-                echo "none"
-                return 0
-                ;;
+            *NR*|*nr*)                  echo "5G"; return 0 ;;
+            *LTE*|*lte*)                echo "4G"; return 0 ;;
+            *HSDPA*|*HSUPA*|*HSPA*|*UMTS*) echo "3G"; return 0 ;;
+            *EDGE*|*GPRS*)              echo "2G"; return 0 ;;
+            *CDMA*|*EvDo*|*TDSCDMA*)    echo "3G"; return 0 ;;
+            *)                          echo "4G"; return 0 ;;  # 默认按 4G
         esac
     fi
+
+    if [ -n "$wifi_conn" ]; then
+        echo "wifi"
+        return 0
+    fi
+
+    # 修改点: dumpsys connectivity 解析失败时, fallback 到 getprop gsm.network.type
+    # 真实输出: NR_SA,Unknown → 含 NR 判定为 5G
+    # 来源: realme RMX5010 Android 16 API 36 实测
+    local net_type_prop2
+    net_type_prop2=$(getprop gsm.network.type 2>/dev/null | head -1)
+    case "$net_type_prop2" in
+        *NR*|*nr*)                  echo "5G"; return 0 ;;
+        *LTE*|*lte*)                echo "4G"; return 0 ;;
+        *HSDPA*|*HSUPA*|*HSPA*|*UMTS*) echo "3G"; return 0 ;;
+        *EDGE*|*GPRS*)              echo "2G"; return 0 ;;
+        *CDMA*|*EvDo*|*TDSCDMA*)    echo "3G"; return 0 ;;
+        *)
+            # 进一步检查 WiFi 状态
+            local wifi_state
+            wifi_state=$(cmd wifi status 2>/dev/null | grep -i 'Wi-Fi is' | head -1)
+            if echo "$wifi_state" | grep -qi 'connected\|enabled'; then
+                echo "wifi"
+                return 0
+            fi
+            echo "none"
+            return 0
+            ;;
+    esac
 }
 
 # ----------------------------------------------------------------------
@@ -779,46 +796,99 @@ se_detect_fake_5g() {
 }
 
 # ----------------------------------------------------------------------
-# 公网延迟检测（保留 v6.3.3 增强 4 级 fallback）
+# 公网延迟检测（修改点: 增强 ping 容错 + nc 端口可达性 fallback）
 # ----------------------------------------------------------------------
-# 来源: S1 v6.3.3 修复
-#   4 级 fallback: 阿里 DNS → 腾讯 DNS → 114 DNS → 本地网关
+# 来源: S1 v6.3.3 4 级 fallback + 用户反馈 ADB shell 环境 ping 可能受限
+# 修改点:
+#   1. 优先使用 /system/bin/ping 绝对路径 (绕过 BusyBox applet 差异)
+#   2. ping 全部失败时, 使用 nc -w 2 -z 223.5.5.5 53 测试端口可达性
+#      - 可达 → 返回 2000 (代表延迟较差但连通)
+#      - 彻底不通 → 返回 timeout
+# 来源: realme RMX5010 Android 16 API 36 实测反馈
 se_get_ping_ms() {
     local result
 
-    # 方法 1: ping 阿里 DNS
-    result=$(ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
-    if [ -n "$result" ]; then
-        echo "$result"
-        return 0
-    fi
-
-    # 方法 2: ping 腾讯 DNS
-    result=$(ping -c 1 -W 2 119.29.29.29 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
-    if [ -n "$result" ]; then
-        echo "$result"
-        return 0
-    fi
-
-    # 方法 3: ping 114 DNS
-    result=$(ping -c 1 -W 2 114.114.114.114 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
-    if [ -n "$result" ]; then
-        echo "$result"
-        return 0
-    fi
-
-    # 方法 4: ping 本地网关（后台环境兜底）
-    local gateway
-    gateway=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -1)
-    if [ -n "$gateway" ]; then
-        result=$(ping -c 1 -W 2 "$gateway" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+    # 修改点 1: 优先使用 /system/bin/ping 绝对路径
+    # 原因: AxManager BusyBox Standalone Mode 下 ping 可能走 applet,
+    #       部分设备 applet 实现存在 SELinux/权限问题
+    if [ -x /system/bin/ping ]; then
+        # 方法 1a: /system/bin/ping 阿里 DNS
+        result=$(/system/bin/ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+        if [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
+        # 方法 1b: /system/bin/ping 腾讯 DNS
+        result=$(/system/bin/ping -c 1 -W 2 119.29.29.29 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+        if [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
+        # 方法 1c: /system/bin/ping 114 DNS
+        result=$(/system/bin/ping -c 1 -W 2 114.114.114.114 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
         if [ -n "$result" ]; then
             echo "$result"
             return 0
         fi
     fi
 
-    echo "?"
+    # 方法 2: 原生 ping 阿里 DNS (兜底, 走 PATH 中的 ping)
+    result=$(ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+    if [ -n "$result" ]; then
+        echo "$result"
+        return 0
+    fi
+
+    # 方法 3: 原生 ping 腾讯 DNS
+    result=$(ping -c 1 -W 2 119.29.29.29 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+    if [ -n "$result" ]; then
+        echo "$result"
+        return 0
+    fi
+
+    # 方法 4: 原生 ping 114 DNS
+    result=$(ping -c 1 -W 2 114.114.114.114 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+    if [ -n "$result" ]; then
+        echo "$result"
+        return 0
+    fi
+
+    # 方法 5: ping 本地网关（后台环境兜底）
+    local gateway
+    gateway=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -1)
+    if [ -n "$gateway" ]; then
+        result=$(/system/bin/ping -c 1 -W 2 "$gateway" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+        [ -n "$result" ] || result=$(ping -c 1 -W 2 "$gateway" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
+        if [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
+    fi
+
+    # 修改点 2: ping 全部失败时, 使用 nc 测试端口可达性
+    # 来源: 用户反馈 - 在 AxManager ADB shell 环境下 ping 可能因 SELinux 受限
+    #   - nc 可达 → 返回 2000 (代表延迟较差但连通)
+    #   - 彻底不通 → 返回 timeout
+    if command -v nc >/dev/null 2>&1; then
+        # 测试阿里 DNS 53 端口
+        if nc -w 2 -z 223.5.5.5 53 2>/dev/null; then
+            echo "2000"
+            return 0
+        fi
+        # 测试腾讯 DNS 53 端口
+        if nc -w 2 -z 119.29.29.29 53 2>/dev/null; then
+            echo "2000"
+            return 0
+        fi
+        # 测试 114 DNS 53 端口
+        if nc -w 2 -z 114.114.114.114 53 2>/dev/null; then
+            echo "2000"
+            return 0
+        fi
+    fi
+
+    # 修改点 3: 全部失败时返回 timeout (而非 ?, 让前端明确显示网络不通)
+    echo "timeout"
     return 0
 }
 

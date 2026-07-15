@@ -493,10 +493,15 @@ json_escape() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: JSON 输出（新增 nr 对象, S3）
+# 修改点 2: JSON 输出（新增 nr 对象 + preferred_network_mode + fake_5g 默认值）
 # ----------------------------------------------------------------------
+# 修改点:
+#   1. 新增 preferred_network_mode 字段 (网络制式, 供前端显示)
+#   2. fake_5g 默认值改为 "0" (而非 true/false, 兼容前端 JS 判断)
+#   3. nr.fake_5g 改为字符串 "0"/"1" (前端统一字符串比较)
+# 来源: 用户反馈 - 网络制式与5G降级状态为空
 show_json() {
-    local net_type ssid rssi speed freq carrier rat level dbm ping_ms nr_rsrp nr_sinr nr_rsrq fake_5g
+    local net_type ssid rssi speed freq carrier rat level dbm ping_ms nr_rsrp nr_sinr nr_rsrq fake_5g pnm_mode
 
     net_type=$(se_detect_network_type 2>/dev/null)
     [ -z "$net_type" ] && net_type="none"
@@ -528,7 +533,7 @@ show_json() {
     ping_ms=$(se_get_ping_ms 2>/dev/null)
     [ -z "$ping_ms" ] && ping_ms="?"
 
-    # 修改点 2: 5G 信号字段（S3）
+    # 5G 信号字段
     nr_rsrp=$(get_nr_rsrp 2>/dev/null)
     [ -z "$nr_rsrp" ] && nr_rsrp="无"
 
@@ -538,11 +543,27 @@ show_json() {
     nr_rsrq=$(get_nr_rsrq 2>/dev/null)
     [ -z "$nr_rsrq" ] && nr_rsrq="无"
 
-    fake_5g=$(get_fake_5g_status 2>/dev/null)
-    [ -z "$fake_5g" ] && fake_5g="false"
+    # 修改点: fake_5g 改为字符串 "0"/"1", 默认 "0" (正常)
+    if se_detect_fake_5g; then
+        fake_5g="1"
+    else
+        fake_5g="0"
+    fi
+
+    # 修改点: 从状态文件读取 5G 降级状态, 文件不存在时默认 "0"
+    local state_fake_5g="0"
+    if [ -f "$SE_STATE_FILE" ]; then
+        state_fake_5g=$(grep '^FAKE_5G_ACTIVE=' "$SE_STATE_FILE" 2>/dev/null | cut -d= -f2)
+        [ -z "$state_fake_5g" ] && state_fake_5g="0"
+    fi
+
+    # 修改点: 新增 preferred_network_mode 字段 (网络制式)
+    pnm_mode=$(se_get global preferred_network_mode 2>/dev/null)
+    [ -z "$pnm_mode" ] && pnm_mode="未知"
 
     echo "{"
     echo "  \"net_type\": \"$(json_escape "$net_type")\","
+    echo "  \"preferred_network_mode\": \"$(json_escape "$pnm_mode")\","
     echo "  \"wifi\": {"
     echo "    \"ssid\": \"$(json_escape "$ssid")\","
     echo "    \"rssi\": \"$(json_escape "$rssi")\","
@@ -559,7 +580,8 @@ show_json() {
     echo "    \"rsrp\": \"$(json_escape "$nr_rsrp")\","
     echo "    \"rsrq\": \"$(json_escape "$nr_rsrq")\","
     echo "    \"sinr\": \"$(json_escape "$nr_sinr")\","
-    echo "    \"fake_5g\": $(json_escape "$fake_5g")"
+    echo "    \"fake_5g\": \"$(json_escape "$fake_5g")\","
+    echo "    \"fake_5g_active\": \"$(json_escape "$state_fake_5g")\""
     echo "  },"
     echo "  \"ping_ms\": \"$(json_escape "$ping_ms")\","
     echo "  \"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)\""

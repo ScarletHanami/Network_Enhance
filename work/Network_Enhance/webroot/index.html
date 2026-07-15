@@ -599,10 +599,30 @@ function loadNetworkInfo() {
 
     document.getElementById('net-type').textContent = data.net_type || '-';
     var badge = document.getElementById('net-badge');
+    // 修改点: 网络类型 5G/4G/3G/2G/wifi/mobile/dual/none 映射
     if (data.net_type === 'wifi') { badge.textContent = 'WiFi'; badge.className = 'badge ok'; }
+    else if (data.net_type === '5G') { badge.textContent = '5G'; badge.className = 'badge ok'; }
+    else if (data.net_type === '4G') { badge.textContent = '4G'; badge.className = 'badge ok'; }
+    else if (data.net_type === '3G') { badge.textContent = '3G'; badge.className = 'badge warn'; }
+    else if (data.net_type === '2G') { badge.textContent = '2G'; badge.className = 'badge err'; }
     else if (data.net_type === 'mobile') { badge.textContent = '移动数据'; badge.className = 'badge ok'; }
     else if (data.net_type === 'dual') { badge.textContent = '双通道'; badge.className = 'badge ok'; }
     else { badge.textContent = '无网络'; badge.className = 'badge err'; }
+
+    // 修改点: 新增网络制式 (preferred_network_mode) 显示
+    var pnmEl = document.getElementById('mobile-rat');
+    if (pnmEl) {
+      var pnm = data.preferred_network_mode || '-';
+      var pnmDesc = pnm;
+      if (pnm === '11') pnmDesc = 'LTE Only (11)';
+      else if (pnm === '9') pnmDesc = 'LTE/3G (9)';
+      else if (pnm === '23') pnmDesc = 'NR Only (23)';
+      else if (pnm === '26') pnmDesc = 'NR/LTE/GSM/WCDMA (26)';
+      else if (pnm === '27') pnmDesc = 'NR/LTE/CDMA/EvDo/GSM/WCDMA (27)';
+      else if (pnm === '32') pnmDesc = 'NR/LTE/TDSCDMA/GSM/WCDMA (32)';
+      else if (pnm === '33') pnmDesc = '全制式5G (33)';
+      pnmEl.textContent = pnmDesc;
+    }
 
     var wifi = data.wifi || {};
     var mobile = data.mobile || {};
@@ -616,7 +636,7 @@ function loadNetworkInfo() {
     document.getElementById('wifi-freq').textContent = wifi.frequency || '?';
 
     document.getElementById('mobile-carrier').textContent = mobile.carrier || '-';
-    document.getElementById('mobile-rat').textContent = mobile.rat || '-';
+    // mobile-rat 已被 preferred_network_mode 占用, 这里不再覆盖
     var lvlEl = document.getElementById('mobile-level');
     var lvlVal = mobile.level || '?';
     lvlEl.textContent = lvlVal + '/4';
@@ -628,10 +648,19 @@ function loadNetworkInfo() {
 
     var pingEl = document.getElementById('net-ping');
     var pingVal = data.ping_ms || '?';
-    pingEl.textContent = pingVal + ' ms';
-    pingEl.className = 'stat-value ' + pingClass(pingVal);
+    // 修改点: ping 显示兼容 timeout / 2000
+    if (pingVal === 'timeout') {
+      pingEl.textContent = 'timeout (不通)';
+      pingEl.className = 'stat-value bad';
+    } else if (pingVal === '2000') {
+      pingEl.textContent = '2000 ms (较差)';
+      pingEl.className = 'stat-value warn';
+    } else {
+      pingEl.textContent = pingVal + ' ms';
+      pingEl.className = 'stat-value ' + pingClass(pingVal);
+    }
 
-    // 修改点 3: 5G 信号质量字段
+    // 5G 信号质量字段
     var nr = data.nr || {};
     var nrBadge = document.getElementById('nr-badge');
     var rsrpEl = document.getElementById('nr-rsrp');
@@ -648,7 +677,10 @@ function loadNetworkInfo() {
     rsrpEl.className = 'stat-value ' + rsrpClass(rsrpVal);
     sinrEl.className = 'stat-value ' + sinrClass(sinrVal);
 
-    if (nr.fake_5g === true) {
+    // 修改点: fake_5g 改为字符串 '1' 判断 (兼容 '1'/'true'/1/true)
+    var isFake5g = (nr.fake_5g === '1' || nr.fake_5g === 1 || nr.fake_5g === true || nr.fake_5g === 'true');
+    var isFake5gActive = (nr.fake_5g_active === '1' || nr.fake_5g_active === 1 || nr.fake_5g_active === 'true');
+    if (isFake5g || isFake5gActive) {
       fake5gEl.textContent = '⚠ 假满格';
       fake5gEl.className = 'stat-value bad';
       nrBadge.textContent = '假满格';

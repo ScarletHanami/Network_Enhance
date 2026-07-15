@@ -1,0 +1,53 @@
+# 网络增强 v1.0 .gitignore
+
+# 打包产物
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# 运行时临时文件 (不应进入仓库)
+/data/local/tmp/
+/data/local/tmp/network_enhance*
+/data/local/tmp/satellite_earth*
+
+# 日志文件
+*.log
+*.log.*
+network_enhance.log
+network_enhance.log.*
+satellite_earth.log
+
+# 状态文件与 PID 文件
+*.pid
+*.state
+*.state.tmp
+network_enhance_monitor.pid
+network_enhance_monitor.state
+network_enhance_5g_backup
+network_enhance_weaknet_active
+network_enhance_dns_prefetch.pid
+network_enhance_pnm_restricted_*
+network_enhance_diag.txt
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# 诊断输出
+diag_output.txt
+diag_dump_output.txt
+
+# 备份文件
+*.bak
+*.orig
+*.rej
+
+# 临时文件
+tmp/
+temp/

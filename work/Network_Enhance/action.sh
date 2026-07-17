@@ -197,6 +197,9 @@ show_menu() {
     print_msg "  3. 社交模式   (微信/QQ 消息延迟)"
     print_msg "  4. 下载模式   (大文件下载)"
     print_msg "  5. 恢复默认优化"
+    print_msg " 33. 代理稳定模式 (锁定4G+移动数据保活+后台压制)"
+    print_msg " 34. 加入代理白名单 (需包名参数)"
+    print_msg " 35. 移出代理白名单 (需包名参数)"
     print_msg ""
     print_msg "  -- Private DNS --"
     print_msg "  6. 查看状态"
@@ -284,6 +287,10 @@ case "$choice" in
     3|social)       sh "$MODDIR/scripts/weaknet.sh" social ;;
     4|download)     sh "$MODDIR/scripts/weaknet.sh" download ;;
     5|normal)       sh "$MODDIR/scripts/weaknet.sh" normal ;;
+    # 修改点: 新增代理稳定模式与白名单管理 (v1.1)
+    33|vpn-mode)    sh "$MODDIR/scripts/weaknet.sh" vpn ;;
+    34|add-vpn-wl)  sh "$MODDIR/scripts/weaknet.sh" add-wl "$2" ;;
+    35|rm-vpn-wl)   sh "$MODDIR/scripts/weaknet.sh" rm-wl "$2" ;;
     # Private DNS
     6)  sh "$MODDIR/scripts/dns.sh" status ;;
     7)  sh "$MODDIR/scripts/dns.sh" list ;;

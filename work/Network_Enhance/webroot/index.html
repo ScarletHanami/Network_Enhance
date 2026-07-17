@@ -125,7 +125,21 @@
     <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
     <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
     <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
+    <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')" style="grid-column:1/-1">代理稳定模式</button>
     <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')" style="grid-column:1/-1">恢复默认优化</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>代理白名单管理</span>
+    <span class="badge" id="wl-badge">Data Saver</span>
+  </div>
+  <div style="font-size:10px;color:#6b7589;margin-bottom:6px">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
+  <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang" style="width:100%;padding:8px;margin-bottom:6px;background:#0f1422;border:1px solid #1e2638;border-radius:4px;color:#e4e8f0;font-size:12px;font-family:inherit;box-sizing:border-box">
+  <div class="btn-grid">
+    <button class="btn success" onclick="addVpnWhitelist()">加入白名单</button>
+    <button class="btn warn" onclick="removeVpnWhitelist()">移出白名单</button>
   </div>
 </div>
 
@@ -578,6 +592,40 @@ function clearLog() {
 function confirmReset() {
   if (!confirm('确定一键还原所有设置?\n\n将关闭 Data Saver + 恢复 5G + 还原 WiFi/DNS 设置')) return;
   runCmd('sh ' + MODDIR + '/action.sh 27', '一键还原');
+}
+
+// 修改点: 代理白名单管理 (v1.1)
+function validatePkgName(pkg) {
+  if (!pkg) return false;
+  return /^[a-zA-Z][a-zA-Z0-9._-]*$/.test(pkg);
+}
+
+function addVpnWhitelist() {
+  var pkg = document.getElementById('vpn-pkg-input').value.trim();
+  if (!pkg) {
+    showAlert('请输入代理软件包名\n\n示例: com.v2ray.ang');
+    return;
+  }
+  if (!validatePkgName(pkg)) {
+    showAlert('包名格式非法: ' + pkg + '\n\n包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头\n示例: com.v2ray.ang');
+    return;
+  }
+  if (!confirm('确定将以下应用加入 Data Saver 白名单?\n\n' + pkg + '\n\n加入后该应用的后台流量不受 Data Saver 限制')) return;
+  runCmd('sh ' + MODDIR + '/action.sh 34 "' + pkg + '"', '加入白名单 ' + pkg);
+}
+
+function removeVpnWhitelist() {
+  var pkg = document.getElementById('vpn-pkg-input').value.trim();
+  if (!pkg) {
+    showAlert('请输入代理软件包名\n\n示例: com.v2ray.ang');
+    return;
+  }
+  if (!validatePkgName(pkg)) {
+    showAlert('包名格式非法: ' + pkg + '\n\n包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头\n示例: com.v2ray.ang');
+    return;
+  }
+  if (!confirm('确定将以下应用移出 Data Saver 白名单?\n\n' + pkg + '\n\n移出后该应用的后台流量将受 Data Saver 限制')) return;
+  runCmd('sh ' + MODDIR + '/action.sh 35 "' + pkg + '"', '移出白名单 ' + pkg);
 }
 
 function parseJSON(text) {

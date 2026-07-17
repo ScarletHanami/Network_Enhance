@@ -501,11 +501,202 @@ show_status() {
     return 0
 }
 
+# ----------------------------------------------------------------------
+# 修改点: 新增代理稳定模式（v1.1）
+# ----------------------------------------------------------------------
+apply_vpn_mode() {
+    echo "=== 应用代理稳定模式 (v1.1) ==="
+    silent_reset
+
+    echo "  [..] 锁定 LTE only (防止 5G/4G 切换导致代理隧道断流)..."
+    if [ -f "$MODDIR/scripts/carrier.sh" ]; then
+        sh "$MODDIR/scripts/carrier.sh" lock-lte >/dev/null 2>&1
+    else
+        log_msg "[vpn] carrier.sh 未找到, 跳过 lock-lte" "[warn]"
+    fi
+
+    se_put global mobile_data_always_on 1
+    echo "  [OK] mobile_data_always_on = 1 (移动数据保活)"
+
+    echo "  [..] 开启 Data Saver (压制后台 App 抢占带宽)..."
+    if cmd netpolicy set restrict-background true 2>/dev/null; then
+        echo "  [OK] Data Saver 已开启"
+        log_msg "[vpn] Data Saver 已开启 (restrict-background=true)" "[weaknet]"
+    else
+        echo "  [WARN] Data Saver 开启失败 (部分 ROM 不支持)"
+        log_msg "[vpn] cmd netpolicy set restrict-background true 失败" "[warn]"
+    fi
+
+    se_put global low_power_mode 0
+    se_put global low_power_sticky 0
+    se_put global wifi_suspend_optimizations_enabled 0
+    se_put global wifi_scan_throttle_enabled 0
+    se_put global wifi_networks_score_enabled 0
+    se_put global wifi_persistent_group_remove_delay_ms 60000
+    se_put global volte_vt_enabled 1
+
+    echo "  [OK] 代理稳定模式已应用 (锁定4G + 移动数据保活 + 后台压制)"
+
+    dns_prefetch "vpn" \
+        dns.alidns.com dot.pub \
+        www.cloudflare.com www.google.com \
+        api.cloudflare.com
+
+    se_notify "网络增强 → 代理稳定模式" "已开启代理稳定模式\n锁定4G + 移动数据保活 + 禁后台抢网\n\n若代理软件断流, 请使用下方白名单工具将其加入白名单\n结束使用后请及时恢复默认 (菜单 5)"
+    log_msg "[vpn] 代理稳定模式已应用" "[weaknet]"
+
+    set_weaknet_active "vpn"
+    echo "[OK] 代理稳定模式已生效"
+    echo ""
+    echo "  注意: 已锁定 LTE Only, 非 VoLTE 来电可能无法接通"
+    echo "  代理使用结束请执行 '恢复默认优化' (菜单 5)"
+    return 0
+}
+
+# ----------------------------------------------------------------------
+# 修改点: 新增代理白名单管理小工具（v1.1）
+# ----------------------------------------------------------------------
+validate_package_name() {
+    local pkg="$1"
+    [ -z "$pkg" ] && return 1
+    case "$pkg" in
+        *[!a-zA-Z0-9._-]*) return 1 ;;
+        *) ;;
+    esac
+    case "${pkg%%[!a-zA-Z]*}" in
+        '') return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+validate_uid() {
+    local uid="$1"
+    [ -z "$uid" ] && return 1
+    case "$uid" in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+get_uid_by_package() {
+    local pkg="$1"
+    [ -z "$pkg" ] && return 1
+    local pm_output
+    pm_output=$(pm list packages -U "$pkg" 2>/dev/null | head -1)
+    [ -z "$pm_output" ] && return 1
+    local uid
+    uid=$(echo "$pm_output" | grep -oE 'uid:[0-9]+' | cut -d: -f2)
+    [ -z "$uid" ] && return 1
+    validate_uid "$uid" || return 1
+    echo "$uid"
+    return 0
+}
+
+add_vpn_whitelist() {
+    local pkg="$1"
+    if [ -z "$pkg" ]; then
+        echo "[FAIL] 未提供包名"
+        echo "用法: sh weaknet.sh add-wl <包名>"
+        return 1
+    fi
+    if ! validate_package_name "$pkg"; then
+        echo "[FAIL] 包名格式非法: $pkg"
+        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
+        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
+        return 1
+    fi
+    echo "=== 加入 Data Saver 白名单 ==="
+    echo "  包名: $pkg"
+    local uid
+    uid=$(get_uid_by_package "$pkg")
+    if [ -z "$uid" ]; then
+        echo "  [FAIL] 无法获取 $pkg 的 UID"
+        echo "  请确认包名正确, 且应用已安装"
+        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
+        return 1
+    fi
+    if ! validate_uid "$uid"; then
+        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
+        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+    echo "  UID : $uid"
+    if cmd netpolicy add restrict-background-whitelist "$uid" 2>/dev/null; then
+        echo "  [OK] 已将 $pkg (UID=$uid) 加入后台流量白名单"
+        se_notify "网络增强 → 白名单已添加" "已将 $pkg 加入后台流量白名单\nData Saver 不再限制该应用的后台流量"
+        log_msg "[vpn-wl] 已加入白名单: $pkg (UID=$uid)" "[weaknet]"
+        return 0
+    else
+        echo "  [FAIL] 添加白名单失败"
+        log_msg "[vpn-wl] 添加白名单失败: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+}
+
+remove_vpn_whitelist() {
+    local pkg="$1"
+    if [ -z "$pkg" ]; then
+        echo "[FAIL] 未提供包名"
+        echo "用法: sh weaknet.sh rm-wl <包名>"
+        return 1
+    fi
+    if ! validate_package_name "$pkg"; then
+        echo "[FAIL] 包名格式非法: $pkg"
+        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
+        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
+        return 1
+    fi
+    echo "=== 移出 Data Saver 白名单 ==="
+    echo "  包名: $pkg"
+    local uid
+    uid=$(get_uid_by_package "$pkg")
+    if [ -z "$uid" ]; then
+        echo "  [FAIL] 无法获取 $pkg 的 UID"
+        echo "  请确认包名正确, 且应用已安装"
+        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
+        return 1
+    fi
+    if ! validate_uid "$uid"; then
+        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
+        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+    echo "  UID : $uid"
+    if cmd netpolicy remove restrict-background-whitelist "$uid" 2>/dev/null; then
+        echo "  [OK] 已将 $pkg (UID=$uid) 移出后台流量白名单"
+        se_notify "网络增强 → 白名单已移除" "已将 $pkg 移出后台流量白名单\n该应用的后台流量将受 Data Saver 限制"
+        log_msg "[vpn-wl] 已移出白名单: $pkg (UID=$uid)" "[weaknet]"
+        return 0
+    else
+        echo "  [FAIL] 移出白名单失败"
+        log_msg "[vpn-wl] 移出白名单失败: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+}
+
+list_vpn_whitelist() {
+    echo "=== 当前 Data Saver 白名单 ==="
+    echo ""
+    local wl_output
+    wl_output=$(cmd netpolicy list restrict-background-whitelist 2>/dev/null)
+    local wl_ret=$?
+    if [ $wl_ret -ne 0 ] || [ -z "$wl_output" ]; then
+        echo "[FAIL] 获取白名单失败 (部分ROM不支持, 或白名单为空)"
+        return 1
+    fi
+    echo "$wl_output"
+    return 0
+}
+
 case "$1" in
     video)        apply_video_mode ;;
     game)         apply_game_mode ;;
     social)       apply_social_mode ;;
     download)     apply_download_mode ;;
+    vpn)          apply_vpn_mode ;;
+    add-wl)       add_vpn_whitelist "$2" ;;
+    rm-wl)        remove_vpn_whitelist "$2" ;;
+    list-wl)      list_vpn_whitelist ;;
     normal|default) apply_normal_mode ;;
     status)       show_status ;;
     *)

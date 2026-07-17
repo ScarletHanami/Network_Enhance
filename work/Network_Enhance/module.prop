@@ -1,8 +1,8 @@
 id=Network_Enhance
 name=网络增强
-version=v1.0
-versionCode=100
+version=v1.1.1
+versionCode=111
 author=寒碑听风
-description=AxManager 免Root 网络优化 v1.0 | 5G假满格自动降级4G | 游戏模式锁定LTE防4G+跳频 | 多品牌兼容(小米/OPPO/vivo/华为/荣耀/三星) | 严格遵循AxManager官方插件协议
+description=AxManager 免Root 网络优化 v1.1.1 | 5G假满格自动降级4G | 游戏模式锁定LTE防4G+跳频 | 代理稳定模式(VPN优化)+白名单小工具 | 修复WiFi频段误判与RSSI正数问题 | 多品牌兼容 | 双卡运营商识别
 banner=banner.png
 axeronPlugin=10000

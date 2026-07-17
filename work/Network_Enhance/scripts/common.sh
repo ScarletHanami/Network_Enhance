@@ -17,8 +17,8 @@
 # ----------------------------------------------------------------------
 # 路径与版本常量（修改点 1+2: 全部统一为 v1.0 / network_enhance）
 # ----------------------------------------------------------------------
-SE_VERSION="1.0"
-SE_VERSION_CODE="100"
+SE_VERSION="1.1.1"
+SE_VERSION_CODE="111"
 SE_LOG_TAG="NetworkEnhance"
 
 # 日志路径优先 /data/local/tmp（ADB 必写、稳定）
@@ -434,19 +434,68 @@ se_detect_network_type() {
 }
 
 # ----------------------------------------------------------------------
-# 运营商自动识别
+# 运营商自动识别（v1.0.1 修复: 兼容双卡/多卡逗号分隔 + 补全 MCC-MNC + alpha 名称匹配）
 # ----------------------------------------------------------------------
+# 修改点:
+#   1. 处理带逗号的多个 MCC-MNC 值（双卡设备返回 "46000,46007"）
+#      截取逗号前的第一个值进行匹配
+#   2. 补全移动 MCC-MNC: 46000/46002/46007 全部识别为 mobile
+#   3. 补全其他运营商:
+#      - 46001/46006 = unicom (联通)
+#      - 46003/46005/46011/46012 = telecom (电信)
+#      - 46015 = ctn (广电)
+#   4. 新增 gsm.sim.operator.alpha 名称匹配（CMCC=移动, CUCC=联通, CTCC=电信）
+# 来源: 用户反馈 - 双卡设备返回 "46000,46007" 导致识别失败
 se_detect_carrier() {
-    local mccmnc
+    local mccmnc mccmnc_first alpha
+
+    # 获取 MCC-MNC（可能含逗号，如 "46000,46007"）
     mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
     [ -z "$mccmnc" ] && mccmnc=$(getprop gsm.operator.numeric 2>/dev/null | head -1)
-    case "$mccmnc" in
-        46011|46012)                              echo "telecom" ;;
-        46001|46006|46009)                        echo "unicom" ;;
-        46000|46002|46004|46007|46008|46013|46015|46017) echo "mobile" ;;
-        46020)                                    echo "ctn" ;;
-        *)                                        echo "auto" ;;
+
+    # 修改点 1: 处理逗号分隔的多个值，取第一个
+    if [ -n "$mccmnc" ]; then
+        mccmnc_first=$(echo "$mccmnc" | cut -d',' -f1 | tr -d ' ')
+    else
+        mccmnc_first=""
+    fi
+
+    # 修改点 2+3: 按 MCC-MNC 匹配（补全所有运营商）
+    case "$mccmnc_first" in
+        # 电信 (telecom): 46003/46005/46011/46012 + 原 46011/46012
+        46003|46005|46011|46012)    echo "telecom"; return 0 ;;
+        # 联通 (unicom): 46001/46006/46009
+        46001|46006|46009)          echo "unicom"; return 0 ;;
+        # 移动 (mobile): 46000/46002/46004/46007/46008/46013/46015/46017
+        # 注意: 46015 在部分文献归广电，但实际双卡场景可能为移动，保留移动
+        46000|46002|46004|46007|46008|46013|46017) echo "mobile"; return 0 ;;
+        # 广电 (ctn): 46015/46020
+        46015|46020)                echo "ctn"; return 0 ;;
     esac
+
+    # 修改点 4: MCC-MNC 匹配失败时，通过运营商名称（alpha）匹配
+    # 双卡设备可能返回 "CMCC,CMCC" 或 "China Mobile,CMCC"
+    alpha=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
+    [ -z "$alpha" ] && alpha=$(getprop gsm.operator.alpha 2>/dev/null | head -1)
+
+    if [ -n "$alpha" ]; then
+        # 转小写匹配（兼容大小写差异）
+        local alpha_lower
+        alpha_lower=$(echo "$alpha" | tr '[:upper:]' '[:lower:]')
+        case "$alpha_lower" in
+            # 移动: CMCC / China Mobile / 中国移动 / 移动
+            *cmcc*|*china\ mobile*|*中国移动*|*移动*)   echo "mobile"; return 0 ;;
+            # 联通: CUCC / China Unicom / 中国联通 / 联通
+            *cucc*|*china\ unicom*|*中国联通*|*联通*)    echo "unicom"; return 0 ;;
+            # 电信: CTCC / China Telecom / 中国电信 / 电信
+            *ctcc*|*china\ telecom*|*中国电信*|*电信*)   echo "telecom"; return 0 ;;
+            # 广电: CBN / China Broadcasting / 中国广电 / 广电
+            *cbn*|*china\ broadcasting*|*中国广电*|*广电*) echo "ctn"; return 0 ;;
+        esac
+    fi
+
+    # 全部匹配失败
+    echo "auto"
 }
 
 # ----------------------------------------------------------------------
@@ -482,17 +531,29 @@ se_get_lte_preferred_mode() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 6: WiFi RSSI 读取（cmd wifi status 优先 + dumpsys fallback）
+# 修改点 6: WiFi RSSI 读取（v1.1.1 增强: 优先匹配负数 RSSI, 防止等级误判）
 # ----------------------------------------------------------------------
-# 来源: S3 + 用户补充要求 4
-#   cmd wifi status 在 Android 14+ 上更稳定, 是 dumpsys wifi 的精简版
-#   失败时 fallback 到 dumpsys wifi 的 5 种 grep 模式 (S1 v6.3.1)
+# 来源: S3 + 用户补充要求 4 + v1.1.1 用户反馈
+#   问题: 部分 ROM 的 cmd wifi status 输出 RSSI 等级(0-100正数)而非 dBm(负数)
+#         原正则 [-]?[0-9]+ 会匹配到正数等级, 导致显示错误
+#   修复:
+#     1. 优先匹配 RSSI/rssi 关键字后的负数值 (-?[0-9]{2,3} 且为负数)
+#     2. 若提取到正数, 说明匹配到错误字段, 降级使用 dumpsys wifi 的 mRssi=
+#     3. 最终兜底: 提取任意 RSSI 关键字后的数字, 但过滤 0-100 的正数(可能是等级)
 se_get_wifi_rssi() {
     local result
 
-    # 优先 cmd wifi status (S3 推荐, Android 14+ 更稳定)
+    # 修改点 1: cmd wifi status 优先, 但只匹配负数 RSSI (v1.1.1 修复)
+    # 原正则 [-]?[0-9]+ 会匹配正数等级, 现改为严格匹配负数
     if se_is_android_14_plus; then
-        result=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE '[-]?[0-9]+' | head -1)
+        # 模式 1a: RSSI: -65 (负数, 标准 dBm)
+        result=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE 'RSSI:?\s*-[0-9]+' | grep -oE '\-[0-9]+' | head -1)
+        [ -n "$result" ] && { echo "$result"; return 0; }
+        # 模式 1b: rssi=-65 (等号格式, 负数)
+        result=$(cmd wifi status 2>/dev/null | grep -i 'rssi' | grep -oE 'rssi=?\s*\-[0-9]+' | grep -oE '\-[0-9]+' | head -1)
+        [ -n "$result" ] && { echo "$result"; return 0; }
+        # 模式 1c: RSSI -65 (空格分隔, 负数)
+        result=$(cmd wifi status 2>/dev/null | grep -iE 'RSSI\s+-[0-9]' | grep -oE '\-[0-9]+' | head -1)
         [ -n "$result" ] && { echo "$result"; return 0; }
     fi
 
@@ -500,24 +561,45 @@ se_get_wifi_rssi() {
     local dump
     dump=$(dumpsys wifi 2>/dev/null)
 
-    # 模式 1: mRssi: -65 (标准 AOSP)
+    # 模式 2: mRssi: -65 (标准 AOSP, 负数)
     result=$(echo "$dump" | awk -F': ' '/^[[:space:]]*mRssi:/ {gsub(/[^0-9-].*/, "", $2); print $2; exit}' 2>/dev/null)
+    # 修改点: 只接受负数, 正数说明匹配到错误字段
+    if [ -n "$result" ] && [ "$result" -lt 0 ] 2>/dev/null; then
+        echo "$result"; return 0
+    fi
+
+    # 模式 3: mRssi=-65 (部分 ROM 用等号, 负数)
+    result=$(echo "$dump" | grep -oE 'mRssi=\-[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mRssi=-65 (部分 ROM 用等号)
-    result=$(echo "$dump" | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    # 模式 4: RSSI: -65 (部分 ROM 简写, 负数)
+    result=$(echo "$dump" | grep -oE 'RSSI:\s*\-[0-9]+' 2>/dev/null | head -1 | grep -oE '\-[0-9]+')
     [ -n "$result" ] && { echo "$result"; return 0; }
 
-    # 模式 3: RSSI: -65 (部分 ROM 简写)
-    result=$(echo "$dump" | grep -oE 'RSSI: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+    # 模式 5: WifiInfo 行内 mRssi=-65 (负数)
+    result=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'mRssi=\-[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && { echo "$result"; return 0; }
 
-    # 模式 4: WifiInfo 行内 mRssi=-65
-    result=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    # 修改点 2: cmd wifi status 兜底 (v1.1.1 修复: 只接受负数)
+    # 如果所有模式都匹配不到负数, 再尝试 cmd wifi status 的任意 RSSI 数字
+    # 但过滤掉 0-100 的正数(可能是等级而非 dBm)
+    local raw_rssi
+    raw_rssi=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE '[-]?[0-9]+' | head -1)
+    if [ -n "$raw_rssi" ]; then
+        # 如果是负数, 直接返回
+        if [ "$raw_rssi" -lt 0 ] 2>/dev/null; then
+            echo "$raw_rssi"; return 0
+        fi
+        # 如果是正数且 >100, 可能是绝对值 dBm (罕见), 返回负值
+        if [ "$raw_rssi" -gt 100 ] 2>/dev/null; then
+            echo "-$raw_rssi"; return 0
+        fi
+        # 0-100 的正数, 判定为等级而非 dBm, 不返回, 继续降级
+        log_msg "[wifi] RSSI 提取到正数 $raw_rssi (可能是等级), 降级处理" "[warn]"
+    fi
 
-    # 模式 5: cmd wifi status (兜底, 即使非 Android 14+ 也尝试)
-    result=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE '[-]?[0-9]+' | head -1)
+    # 修改点 3: 最终兜底 - dumpsys wifi 提取任意 RSSI 数字 (负数优先)
+    result=$(echo "$dump" | grep -oE 'mRssi[=:]\s*-[0-9]+' 2>/dev/null | head -1 | grep -oE '\-[0-9]+')
     [ -n "$result" ] && { echo "$result"; return 0; }
 
     # 全部失败

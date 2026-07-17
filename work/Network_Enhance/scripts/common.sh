@@ -17,8 +17,8 @@
 # ----------------------------------------------------------------------
 # 路径与版本常量（修改点 1+2: 全部统一为 v1.0 / network_enhance）
 # ----------------------------------------------------------------------
-SE_VERSION="1.1.1"
-SE_VERSION_CODE="111"
+SE_VERSION="1.1.2"
+SE_VERSION_CODE="112"
 SE_LOG_TAG="NetworkEnhance"
 
 # 日志路径优先 /data/local/tmp（ADB 必写、稳定）
@@ -531,80 +531,87 @@ se_get_lte_preferred_mode() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 6: WiFi RSSI 读取（v1.1.1 增强: 优先匹配负数 RSSI, 防止等级误判）
+# 修改点 6: WiFi RSSI 读取（v1.1.2 强容错: 多重 fallback, 数值范围校验）
 # ----------------------------------------------------------------------
-# 来源: S3 + 用户补充要求 4 + v1.1.1 用户反馈
-#   问题: 部分 ROM 的 cmd wifi status 输出 RSSI 等级(0-100正数)而非 dBm(负数)
-#         原正则 [-]?[0-9]+ 会匹配到正数等级, 导致显示错误
-#   修复:
-#     1. 优先匹配 RSSI/rssi 关键字后的负数值 (-?[0-9]{2,3} 且为负数)
-#     2. 若提取到正数, 说明匹配到错误字段, 降级使用 dumpsys wifi 的 mRssi=
-#     3. 最终兜底: 提取任意 RSSI 关键字后的数字, 但过滤 0-100 的正数(可能是等级)
+# 来源: v1.1.1 修复后发现部分 ROM 因空格/换行导致严格负数正则匹配失败
+# v1.1.2 策略:
+#   1. cmd wifi status 提取: 兼容 RSSI: -60 / rssi=-60 / mRssi=-60 等格式
+#      提取到数值后, 只要 -100 到 -10 之间, 认为合法 dBm
+#   2. 正数(0-100)判定为等级或链路速率, 丢弃, 继续下一步
+#   3. dumpsys wifi 提取: grep -iE 'mRssi|rssi', 兼容多种格式
+#   4. 兜底: dumpsys wifi 抓取第一个两位数负数作为估算值
 se_get_wifi_rssi() {
-    local result
+    local result raw_val
 
-    # 修改点 1: cmd wifi status 优先, 但只匹配负数 RSSI (v1.1.1 修复)
-    # 原正则 [-]?[0-9]+ 会匹配正数等级, 现改为严格匹配负数
+    # ========== 阶段 1: cmd wifi status 提取 ==========
     if se_is_android_14_plus; then
-        # 模式 1a: RSSI: -65 (负数, 标准 dBm)
-        result=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE 'RSSI:?\s*-[0-9]+' | grep -oE '\-[0-9]+' | head -1)
-        [ -n "$result" ] && { echo "$result"; return 0; }
-        # 模式 1b: rssi=-65 (等号格式, 负数)
-        result=$(cmd wifi status 2>/dev/null | grep -i 'rssi' | grep -oE 'rssi=?\s*\-[0-9]+' | grep -oE '\-[0-9]+' | head -1)
-        [ -n "$result" ] && { echo "$result"; return 0; }
-        # 模式 1c: RSSI -65 (空格分隔, 负数)
-        result=$(cmd wifi status 2>/dev/null | grep -iE 'RSSI\s+-[0-9]' | grep -oE '\-[0-9]+' | head -1)
-        [ -n "$result" ] && { echo "$result"; return 0; }
+        # 1a: 提取 RSSI 关键字后的数字 (兼容 RSSI: -60 / rssi=-60 / mRssi=-60 / RSSI -60)
+        raw_val=$(cmd wifi status 2>/dev/null | grep -iE 'rssi' | grep -oE '[-]?[0-9]+' | head -1)
+        if [ -n "$raw_val" ]; then
+            # 数值范围校验: -100 到 -10 为合法 dBm
+            if [ "$raw_val" -le -10 ] 2>/dev/null && [ "$raw_val" -ge -100 ] 2>/dev/null; then
+                echo "$raw_val"; return 0
+            fi
+            # 正数 0-100 = 等级, 丢弃继续; >100 可能是绝对值
+            if [ "$raw_val" -gt 100 ] 2>/dev/null; then
+                echo "-$raw_val"; return 0
+            fi
+            # 0-100 正数, 继续走 fallback
+            :
+        fi
     fi
 
-    # Fallback: dumpsys wifi 5 种模式 (S1 v6.3.1)
+    # ========== 阶段 2: dumpsys wifi 提取 ==========
     local dump
     dump=$(dumpsys wifi 2>/dev/null)
 
-    # 模式 2: mRssi: -65 (标准 AOSP, 负数)
+    # 2a: mRssi: -65 (标准 AOSP, 冒号格式)
     result=$(echo "$dump" | awk -F': ' '/^[[:space:]]*mRssi:/ {gsub(/[^0-9-].*/, "", $2); print $2; exit}' 2>/dev/null)
-    # 修改点: 只接受负数, 正数说明匹配到错误字段
-    if [ -n "$result" ] && [ "$result" -lt 0 ] 2>/dev/null; then
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
         echo "$result"; return 0
     fi
 
-    # 模式 3: mRssi=-65 (部分 ROM 用等号, 负数)
-    result=$(echo "$dump" | grep -oE 'mRssi=\-[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
-
-    # 模式 4: RSSI: -65 (部分 ROM 简写, 负数)
-    result=$(echo "$dump" | grep -oE 'RSSI:\s*\-[0-9]+' 2>/dev/null | head -1 | grep -oE '\-[0-9]+')
-    [ -n "$result" ] && { echo "$result"; return 0; }
-
-    # 模式 5: WifiInfo 行内 mRssi=-65 (负数)
-    result=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'mRssi=\-[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$result" ] && { echo "$result"; return 0; }
-
-    # 修改点 2: cmd wifi status 兜底 (v1.1.1 修复: 只接受负数)
-    # 如果所有模式都匹配不到负数, 再尝试 cmd wifi status 的任意 RSSI 数字
-    # 但过滤掉 0-100 的正数(可能是等级而非 dBm)
-    local raw_rssi
-    raw_rssi=$(cmd wifi status 2>/dev/null | grep -i 'RSSI' | grep -oE '[-]?[0-9]+' | head -1)
-    if [ -n "$raw_rssi" ]; then
-        # 如果是负数, 直接返回
-        if [ "$raw_rssi" -lt 0 ] 2>/dev/null; then
-            echo "$raw_rssi"; return 0
-        fi
-        # 如果是正数且 >100, 可能是绝对值 dBm (罕见), 返回负值
-        if [ "$raw_rssi" -gt 100 ] 2>/dev/null; then
-            echo "-$raw_rssi"; return 0
-        fi
-        # 0-100 的正数, 判定为等级而非 dBm, 不返回, 继续降级
-        log_msg "[wifi] RSSI 提取到正数 $raw_rssi (可能是等级), 降级处理" "[warn]"
+    # 2b: mRssi=-65 (等号格式)
+    result=$(echo "$dump" | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        echo "$result"; return 0
     fi
 
-    # 修改点 3: 最终兜底 - dumpsys wifi 提取任意 RSSI 数字 (负数优先)
-    result=$(echo "$dump" | grep -oE 'mRssi[=:]\s*-[0-9]+' 2>/dev/null | head -1 | grep -oE '\-[0-9]+')
-    [ -n "$result" ] && { echo "$result"; return 0; }
+    # 2c: RSSI: -65 或 RSSI = -65 (简写格式)
+    result=$(echo "$dump" | grep -oE 'RSSI:?\s*[-]?[0-9]+' 2>/dev/null | head -1 | grep -oE '[-]?[0-9]+')
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        echo "$result"; return 0
+    fi
+
+    # 2d: WifiInfo 行内 mRssi=-65
+    result=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'mRssi=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        echo "$result"; return 0
+    fi
+
+    # 2e: 任意含 rssi 行的第一个负数 (宽泛匹配)
+    result=$(echo "$dump" | grep -iE 'rssi' | grep -oE '\-[0-9]+' | head -1)
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        echo "$result"; return 0
+    fi
+
+    # ========== 阶段 3: cmd wifi status 任意负数 (非 Android 14+ 也尝试) ==========
+    result=$(cmd wifi status 2>/dev/null | grep -iE 'rssi' | grep -oE '\-[0-9]+' | head -1)
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        echo "$result"; return 0
+    fi
+
+    # ========== 阶段 4: 兜底 - dumpsys wifi 第一个两位数负数估算 ==========
+    result=$(echo "$dump" | grep -oE '\-[0-9]{2}' | head -1)
+    if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
+        log_msg "[wifi] RSSI 使用兜底估算值: $result" "[warn]"
+        echo "$result"; return 0
+    fi
 
     # 全部失败
     echo ""
 }
+
 
 # ----------------------------------------------------------------------
 # 移动信号 dBm 读取（保留 v6.3.0 多 ROM 兼容）

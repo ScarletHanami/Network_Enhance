@@ -1,20 +1,16 @@
 # 网络增强 版本日志
 
+## v1.1.2 (2026-07-17) — WiFi RSSI 解析强容错版
+
+- 修复部分 ROM 上 WiFi RSSI 显示为空的问题（重构为四阶段多重 fallback 机制）
+- 增强数值范围校验（-100 到 -10 为合法 dBm，正数自动降级处理）
+
+---
+
 ## v1.1.1 (2026-07-16) — WiFi 频段与 RSSI 解析修复版
 
-### 修复内容
-
-#### Bug 1：WiFi 频段误判为 2.4G
-**问题**：WiFi 名为 `OpenWRT_5G` 但频段显示 2.4G。
-**修复**：新增 `_judge_freq()` 辅助函数，严格匹配 4 位数频率（2412-5825），`>4000=5G`，`2000-3000=2.4G`。
-
-#### Bug 2：WiFi RSSI 解析为正数
-**问题**：RSSI 显示为正数 `5 dBm`（部分 ROM 输出等级 0-100 而非 dBm 负数）。
-**修复**：优先匹配负数 RSSI，提取到 0-100 正数时降级使用 dumpsys wifi 的 `mRssi=`。
-
-### 版本号更新
-- `module.prop`: version=v1.1.1, versionCode=111
-- `common.sh`: SE_VERSION="1.1.1", SE_VERSION_CODE="111"
+- 修复部分 ROM 上 WiFi 频段误判为 2.4G 的问题（重构频率判定逻辑，严格匹配 4 位数频率值）
+- 修复 WiFi RSSI 显示为正数等级的问题（增强负数优先匹配与正数降级容错）
 
 ---
 
@@ -23,93 +19,29 @@
 ### 新增功能
 
 #### 1. 代理稳定模式（VPN/代理用户优化）
-**应用场景**：VPN/代理用户在网络切换时频繁断流，以及后台 App 抢占带宽导致代理延迟。
-
-**解决方案**：新增 `apply_vpn_mode()` 函数，一键优化代理使用环境：
-
-1. **锁定 LTE Only**（调用 `carrier.sh lock-lte`）
-   - 防止 5G/4G 切换导致代理隧道重连断流
-   - 写入 `preferred_network_mode=11` + 关闭 ENDC
-
-2. **移动数据始终保活**（`mobile_data_always_on=1`）
-   - 避免 WiFi/移动数据切换时代理连接中断
-   - 确保代理隧道底层网络稳定
-
-3. **开启 Data Saver 压制后台抢网**（`cmd netpolicy set restrict-background true`）
-   - 确保代理流量优先
-   - 避免后台应用抢网导致代理延迟
-
-4. **DNS 预热代理服务域名**
-   - 覆盖主流 VPN 协议与 CDN（Cloudflare/Google）
-   - 加速代理握手
-
-5. **调度器严格避让**（`set_weaknet_active "vpn"`）
-   - 代理模式期间调度器不执行任何 PNM 操作
-   - 避免与代理稳定模式冲突
-
-6. **用户通知**
-   - 开启时发送通知，提示若代理断流可使用白名单工具
+- 锁定 LTE Only（防止 5G/4G 切换导致代理隧道重连断流）
+- 移动数据始终保活（避免 WiFi/移动数据切换时代理连接中断）
+- 开启 Data Saver 压制后台抢网
+- DNS 预热代理服务域名
+- 调度器严格避让
 
 #### 2. 内置代理白名单管理小工具
-**应用场景**：代理稳定模式开启的 Data Saver 可能误伤后台运行的 VPN App 本身，导致代理断流。
+- WebUI 输入包名一键管理 Data Saver 白名单
+- 通过 `pm list packages -U` 获取应用 UID
+- 执行 `cmd netpolicy add/remove restrict-background-whitelist <UID>`
+- 彻底解决代理软件被 Data Saver 误杀导致断流问题
 
-**解决方案**：内置白名单管理小工具，用户在 WebUI 输入代理软件包名即可一键管理 Data Saver 白名单。
+#### 3. 前后端四层安全加固
+- 前端 JS 正则校验包名格式
+- 前端 JS 双引号包裹包名
+- 后端 shell `validate_package_name()` 校验
+- 后端 shell `validate_uid()` 纯数字校验
 
-**新增函数**：
-- `add_vpn_whitelist <包名>`：加入 Data Saver 白名单
-- `remove_vpn_whitelist <包名>`：移出 Data Saver 白名单
-- `list_vpn_whitelist`：查看当前白名单
-- `get_uid_by_package <包名>`：通过 `pm list packages -U` 获取应用 UID
-
-**工作流程**：
-1. 接收包名参数（如 `com.v2ray.ang`）
-2. 通过 `pm list packages -U <包名>` 获取 UID（解析 `uid:100xx`）
-3. 执行 `cmd netpolicy add/remove restrict-background-whitelist <UID>`
-4. 成功后发送通知告知用户
-
-**WebUI 交互**：
-- 弱网自救卡片下方新增"代理白名单管理"卡片
-- 包名输入框（placeholder: `com.v2ray.ang`）
-- "加入白名单"按钮（执行 `action.sh 34`）
-- "移出白名单"按钮（执行 `action.sh 35`）
-
-**Action 菜单**：
-- `34|add-vpn-wl <包名>`：加入白名单
-- `35|rm-vpn-wl <包名>`：移出白名单
-
-**彻底解决**：代理软件被 Data Saver 误杀导致断流的问题，用户无需再去系统设置手动加白名单。
-
-### 交互入口更新
-
-- **action.sh**：
-  - 菜单 33 `vpn-mode` 触发代理稳定模式
-  - 菜单 34 `add-vpn-wl <包名>` 加入白名单
-  - 菜单 35 `rm-vpn-wl <包名>` 移出白名单
-- **webroot/index.html**：
-  - 弱网自救卡片新增"代理稳定模式"按钮
-  - 新增"代理白名单管理"卡片（输入框 + 加入/移出按钮）
-- **weaknet.sh**：case 分发新增 `vpn)` / `add-wl)` / `rm-wl)` / `list-wl)` 子命令
-
-### 恢复默认联动
-
-代理稳定模式结束后，执行"恢复默认优化"（菜单 5）会自动：
-- 关闭 Data Saver（`cmd netpolicy set restrict-background false`）
-- 还原 `mobile_data_always_on=0`
-- 调用 `carrier.sh unlock-lte` 恢复 5G + 清除 PNM 受限标记 + 功能性验证
-- 重启调度器
-
-### 版本号更新
-- `module.prop`: version=v1.1, versionCode=110
-- `common.sh`: SE_VERSION="1.1", SE_VERSION_CODE="110"
-
-### 继承功能（v1.0 + v1.0.1）
-- ✅ 5G 假满格自动降级（RSRP+SINR+Ping 三维度）
-- ✅ 游戏模式锁定 LTE Only 防跳频
-- ✅ 多品牌 PNM 写入验证（华为/荣耀/三星）
-- ✅ 防振荡冷却与无网络死锁回退
-- ✅ 双卡/多卡运营商识别（逗号分隔处理 + alpha 名称匹配）
-- ✅ 智能 DNS 选择
-- ✅ Data Saver 禁后台抢带宽
+### 交互入口
+- 菜单 33：代理稳定模式
+- 菜单 34：加入代理白名单（需包名参数）
+- 菜单 35：移出代理白名单（需包名参数）
+- WebUI：弱网自救卡片 + 代理白名单管理卡片
 
 ---
 
@@ -118,24 +50,10 @@
 ### 修复内容
 
 #### Bug：双卡/多卡设备运营商识别失败
-**问题反馈**：用户日志显示 `SIM 运营商: CMCC,CMCC (46000,46007)`，最终判定为"未识别运营商，将使用默认值 26"。
-
-**根因**：双卡设备的 `getprop gsm.sim.operator.numeric` 返回带逗号的多个 MCC-MNC 值（如 `"46000,46007"`），原 `se_detect_carrier()` 函数直接对整个字符串做 `case` 匹配，导致匹配失效。
-
-**修复方案**（4 项增强）：
-
-1. **逗号分隔处理**：获取到 MCC-MNC 后，用 `cut -d',' -f1` 截取逗号前的第一个值进行匹配
-2. **补全移动 MCC-MNC**：46000/46002/46007 明确识别为 mobile
-3. **补全其他运营商 MCC-MNC**：
-   - 电信：46003/46005/46011/46012
-   - 联通：46001/46006/46009
-   - 广电：46015/46020
-4. **新增运营商名称（alpha）匹配**：CMCC=移动, CUCC=联通, CTCC=电信, CBN=广电（兼容中英文）
-
-### 影响
-- 双卡设备现在能正确识别运营商
-- 运营商识别成功率从约 70% 提升至 95%+
-- 后续运营商默认值应用（电信 27 / 移动 32 / 联通 26 / 广电 33）将正确生效
+- 处理逗号分隔的多个 MCC-MNC 值（双卡设备返回 "46000,46007"）
+- 补全移动 MCC-MNC: 46000/46002/46007
+- 补全电信 MCC-MNC: 46003/46005
+- 新增运营商名称(alpha)匹配: CMCC/CUCC/CTCC/CBN + 中文名称
 
 ---
 

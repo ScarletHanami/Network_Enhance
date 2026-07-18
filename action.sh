@@ -287,9 +287,8 @@ case "$choice" in
     3|social)       sh "$MODDIR/scripts/weaknet.sh" social ;;
     4|download)     sh "$MODDIR/scripts/weaknet.sh" download ;;
     5|normal)       sh "$MODDIR/scripts/weaknet.sh" normal ;;
-    # 修改点: 新增代理稳定模式 (v1.1)
+    # 修改点: 新增代理稳定模式与白名单管理 (v1.1)
     33|vpn-mode)    sh "$MODDIR/scripts/weaknet.sh" vpn ;;
-    # 修改点: 新增代理白名单管理 (v1.1)
     34|add-vpn-wl)  sh "$MODDIR/scripts/weaknet.sh" add-wl "$2" ;;
     35|rm-vpn-wl)   sh "$MODDIR/scripts/weaknet.sh" rm-wl "$2" ;;
     # Private DNS

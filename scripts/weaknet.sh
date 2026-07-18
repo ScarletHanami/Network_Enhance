@@ -394,279 +394,6 @@ apply_download_mode() {
 #   4. 重置 WiFi/移动数据 settings
 #   5. 清理 DNS 预热 PID
 #   6. 重启 monitor.sh (如果配置启用)
-# ----------------------------------------------------------------------
-# 修改点: 新增代理稳定模式（v1.1）
-# ----------------------------------------------------------------------
-# 来源: v1.1 新增功能 - 解决 VPN/代理用户在网络切换时的断流和后台抢网问题
-# 流程:
-#   1. silent_reset 清理其他弱网状态
-#   2. 调用 carrier.sh lock-lte 锁定 LTE Only (防止 5G/4G 切换导致代理隧道重连断流)
-#   3. se_put global mobile_data_always_on 1 (保持移动数据始终保活)
-#   4. cmd netpolicy set restrict-background true (开启 Data Saver, 压制后台 App 抢占带宽)
-#   5. 发送通知告知用户
-#   6. set_weaknet_active "vpn" (让调度器严格避让)
-apply_vpn_mode() {
-    echo "=== 应用代理稳定模式 (v1.1) ==="
-    silent_reset
-
-    # 关键 1: 调用 carrier.sh lock-lte 锁定 LTE only
-    # 防止 5G/4G 切换导致代理隧道重连断流
-    echo "  [..] 锁定 LTE only (防止 5G/4G 切换导致代理隧道断流)..."
-    if [ -f "$MODDIR/scripts/carrier.sh" ]; then
-        sh "$MODDIR/scripts/carrier.sh" lock-lte >/dev/null 2>&1
-    else
-        log_msg "[vpn] carrier.sh 未找到, 跳过 lock-lte" "[warn]"
-    fi
-
-    # 关键 2: 保持移动数据始终保活
-    # 避免 WiFi/移动数据切换时代理连接中断
-    se_put global mobile_data_always_on 1
-    echo "  [OK] mobile_data_always_on = 1 (移动数据保活)"
-
-    # 关键 3: 开启 Data Saver 压制后台 App 抢占带宽
-    # 确保代理流量优先, 避免后台应用抢网导致代理延迟
-    echo "  [..] 开启 Data Saver (压制后台 App 抢占带宽)..."
-    if cmd netpolicy set restrict-background true 2>/dev/null; then
-        echo "  [OK] Data Saver 已开启"
-        log_msg "[vpn] Data Saver 已开启 (restrict-background=true)" "[weaknet]"
-    else
-        echo "  [WARN] Data Saver 开启失败 (部分 ROM 不支持)"
-        log_msg "[vpn] cmd netpolicy set restrict-background true 失败" "[warn]"
-    fi
-
-    # 关闭低功耗
-    se_put global low_power_mode 0
-    se_put global low_power_sticky 0
-
-    # WiFi 优化（弱信号容忍, 减少扫描中断）
-    se_put global wifi_suspend_optimizations_enabled 0
-    se_put global wifi_scan_throttle_enabled 0
-    se_put global wifi_networks_score_enabled 0
-    se_put global wifi_persistent_group_remove_delay_ms 60000
-
-    # VoLTE 启用（LTE only 下语音依赖 VoLTE）
-    se_put global volte_vt_enabled 1
-
-    echo "  [OK] 代理稳定模式已应用 (锁定4G + 移动数据保活 + 后台压制)"
-
-    # DNS 预热常见代理服务域名
-    # 覆盖主流 VPN 协议与 CDN, 加速代理握手
-    dns_prefetch "vpn" \
-        dns.alidns.com dot.pub \
-        www.cloudflare.com www.google.com \
-        api.cloudflare.com
-
-    # 关键 4: 发送通知告知用户
-    se_notify "网络增强 → 代理稳定模式" "已开启代理稳定模式\n锁定4G + 移动数据保活 + 禁后台抢网\n\n若代理软件断流, 请使用下方白名单工具将其加入白名单\n结束使用后请及时恢复默认 (菜单 5)"
-    log_msg "[vpn] 代理稳定模式已应用" "[weaknet]"
-
-    # 关键 5: set_weaknet_active "vpn" (让调度器严格避让)
-    set_weaknet_active "vpn"
-    echo "[OK] 代理稳定模式已生效"
-    echo ""
-    echo "  注意: 已锁定 LTE Only, 非 VoLTE 来电可能无法接通"
-    echo "  代理使用结束请执行 '恢复默认优化' (菜单 5)"
-    return 0
-}
-
-# ----------------------------------------------------------------------
-# 修改点: 新增代理白名单管理小工具（v1.1）
-# ----------------------------------------------------------------------
-# 来源: v1.1 补充功能 - 解决 Data Saver 误伤后台 VPN App 导致代理断流问题
-# 用法:
-#   add_vpn_whitelist <包名>    # 加入 Data Saver 白名单
-#   remove_vpn_whitelist <包名> # 移出 Data Saver 白名单
-# 流程:
-#   1. 接收包名参数 (如 com.v2ray.ang)
-#   2. 校验包名格式 (仅允许字母/数字/点/下划线/连字符)
-#   3. 通过 pm list packages -U <包名> 获取 UID (解析 uid:100xx)
-#   4. 校验 UID 为纯数字 (防止命令注入)
-#   5. 执行 cmd netpolicy add/remove restrict-background-whitelist <UID>
-#   6. 发送通知告知用户
-# 来源: S3 cmd netpolicy 子命令 (Android Developer 官方文档)
-
-# 校验包名格式 (仅允许字母/数字/点/下划线/连字符)
-# 返回: 0 = 合法, 1 = 非法
-validate_package_name() {
-    local pkg="$1"
-    [ -z "$pkg" ] && return 1
-    # 包名正则: 必须以字母开头, 仅含字母/数字/点/下划线/连字符
-    # 防止命令注入: 拒绝 ; | $ ` ( ) & 等特殊字符
-    case "$pkg" in
-        *[!a-zA-Z0-9._-]*) return 1 ;;
-        *) ;;
-    esac
-    # 必须以字母开头
-    case "${pkg%%[!a-zA-Z]*}" in
-        '') return 1 ;;
-        *) return 0 ;;
-    esac
-}
-
-# 校验 UID 为纯数字 (防止命令注入)
-# 返回: 0 = 合法, 1 = 非法
-validate_uid() {
-    local uid="$1"
-    [ -z "$uid" ] && return 1
-    case "$uid" in
-        ''|*[!0-9]*) return 1 ;;
-        *) return 0 ;;
-    esac
-}
-
-# 通过包名获取 UID
-# 返回: UID 数字 (如 10045), 失败返回空
-get_uid_by_package() {
-    local pkg="$1"
-    [ -z "$pkg" ] && return 1
-
-    # pm list packages -U 输出格式: package:com.v2ray.ang uid:10045
-    # 解析 uid: 后的数字
-    local pm_output
-    pm_output=$(pm list packages -U "$pkg" 2>/dev/null | head -1)
-    [ -z "$pm_output" ] && return 1
-
-    # 提取 uid: 后的数字
-    local uid
-    uid=$(echo "$pm_output" | grep -oE 'uid:[0-9]+' | cut -d: -f2)
-    [ -z "$uid" ] && return 1
-
-    # 校验 UID 为纯数字 (防御性编程)
-    validate_uid "$uid" || return 1
-
-    echo "$uid"
-    return 0
-}
-
-# 加入 Data Saver 白名单
-add_vpn_whitelist() {
-    local pkg="$1"
-
-    if [ -z "$pkg" ]; then
-        echo "[FAIL] 未提供包名"
-        echo "用法: sh weaknet.sh add-wl <包名>"
-        echo "示例: sh weaknet.sh add-wl com.v2ray.ang"
-        return 1
-    fi
-
-    # 修改点: 包名格式校验 (防止命令注入)
-    if ! validate_package_name "$pkg"; then
-        echo "[FAIL] 包名格式非法: $pkg"
-        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
-        echo "  示例: com.v2ray.ang"
-        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
-        return 1
-    fi
-
-    echo "=== 加入 Data Saver 白名单 ==="
-    echo "  包名: $pkg"
-
-    # 获取 UID
-    local uid
-    uid=$(get_uid_by_package "$pkg")
-    if [ -z "$uid" ]; then
-        echo "  [FAIL] 无法获取 $pkg 的 UID"
-        echo "  请确认包名正确, 且应用已安装"
-        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
-        return 1
-    fi
-
-    # 修改点: UID 纯数字二次校验 (防御性编程)
-    if ! validate_uid "$uid"; then
-        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
-        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
-        return 1
-    fi
-
-    echo "  UID : $uid"
-
-    # 执行白名单添加
-    # 来源: S3 Android Developer https://developer.android.com/develop/connectivity/network-ops/data-saver
-    if cmd netpolicy add restrict-background-whitelist "$uid" 2>/dev/null; then
-        echo "  [OK] 已将 $pkg (UID=$uid) 加入后台流量白名单"
-        se_notify "网络增强 → 白名单已添加" "已将 $pkg 加入后台流量白名单\nData Saver 不再限制该应用的后台流量"
-        log_msg "[vpn-wl] 已加入白名单: $pkg (UID=$uid)" "[weaknet]"
-        return 0
-    else
-        echo "  [FAIL] 添加白名单失败"
-        echo "  可能原因: 部分ROM不支持, 或 UID 无效"
-        log_msg "[vpn-wl] 添加白名单失败: $pkg (UID=$uid)" "[warn]"
-        return 1
-    fi
-}
-
-# 移出 Data Saver 白名单
-remove_vpn_whitelist() {
-    local pkg="$1"
-
-    if [ -z "$pkg" ]; then
-        echo "[FAIL] 未提供包名"
-        echo "用法: sh weaknet.sh rm-wl <包名>"
-        echo "示例: sh weaknet.sh rm-wl com.v2ray.ang"
-        return 1
-    fi
-
-    # 修改点: 包名格式校验 (防止命令注入)
-    if ! validate_package_name "$pkg"; then
-        echo "[FAIL] 包名格式非法: $pkg"
-        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
-        echo "  示例: com.v2ray.ang"
-        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
-        return 1
-    fi
-
-    echo "=== 移出 Data Saver 白名单 ==="
-    echo "  包名: $pkg"
-
-    # 获取 UID
-    local uid
-    uid=$(get_uid_by_package "$pkg")
-    if [ -z "$uid" ]; then
-        echo "  [FAIL] 无法获取 $pkg 的 UID"
-        echo "  请确认包名正确, 且应用已安装"
-        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
-        return 1
-    fi
-
-    # 修改点: UID 纯数字二次校验 (防御性编程)
-    if ! validate_uid "$uid"; then
-        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
-        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
-        return 1
-    fi
-
-    echo "  UID : $uid"
-
-    # 执行白名单移除
-    if cmd netpolicy remove restrict-background-whitelist "$uid" 2>/dev/null; then
-        echo "  [OK] 已将 $pkg (UID=$uid) 移出后台流量白名单"
-        se_notify "网络增强 → 白名单已移除" "已将 $pkg 移出后台流量白名单\n该应用的后台流量将受 Data Saver 限制"
-        log_msg "[vpn-wl] 已移出白名单: $pkg (UID=$uid)" "[weaknet]"
-        return 0
-    else
-        echo "  [FAIL] 移出白名单失败"
-        echo "  可能原因: 该应用不在白名单中, 或部分ROM不支持"
-        log_msg "[vpn-wl] 移出白名单失败: $pkg (UID=$uid)" "[warn]"
-        return 1
-    fi
-}
-
-# 列出当前白名单 (辅助功能)
-list_vpn_whitelist() {
-    echo "=== 当前 Data Saver 白名单 ==="
-    echo ""
-    # 修改点: 正确捕获 cmd netpolicy 的退出码
-    local wl_output
-    wl_output=$(cmd netpolicy list restrict-background-whitelist 2>/dev/null)
-    local wl_ret=$?
-    if [ $wl_ret -ne 0 ] || [ -z "$wl_output" ]; then
-        echo "[FAIL] 获取白名单失败 (部分ROM不支持, 或白名单为空)"
-        return 1
-    fi
-    echo "$wl_output"
-    return 0
-}
-
 apply_normal_mode() {
     echo "=== 恢复默认优化模式 ==="
     clear_weaknet_active
@@ -774,6 +501,193 @@ show_status() {
     return 0
 }
 
+# ----------------------------------------------------------------------
+# 修改点: 新增代理稳定模式（v1.1）
+# ----------------------------------------------------------------------
+apply_vpn_mode() {
+    echo "=== 应用代理稳定模式 (v1.1) ==="
+    silent_reset
+
+    echo "  [..] 锁定 LTE only (防止 5G/4G 切换导致代理隧道断流)..."
+    if [ -f "$MODDIR/scripts/carrier.sh" ]; then
+        sh "$MODDIR/scripts/carrier.sh" lock-lte >/dev/null 2>&1
+    else
+        log_msg "[vpn] carrier.sh 未找到, 跳过 lock-lte" "[warn]"
+    fi
+
+    se_put global mobile_data_always_on 1
+    echo "  [OK] mobile_data_always_on = 1 (移动数据保活)"
+
+    echo "  [..] 开启 Data Saver (压制后台 App 抢占带宽)..."
+    if cmd netpolicy set restrict-background true 2>/dev/null; then
+        echo "  [OK] Data Saver 已开启"
+        log_msg "[vpn] Data Saver 已开启 (restrict-background=true)" "[weaknet]"
+    else
+        echo "  [WARN] Data Saver 开启失败 (部分 ROM 不支持)"
+        log_msg "[vpn] cmd netpolicy set restrict-background true 失败" "[warn]"
+    fi
+
+    se_put global low_power_mode 0
+    se_put global low_power_sticky 0
+    se_put global wifi_suspend_optimizations_enabled 0
+    se_put global wifi_scan_throttle_enabled 0
+    se_put global wifi_networks_score_enabled 0
+    se_put global wifi_persistent_group_remove_delay_ms 60000
+    se_put global volte_vt_enabled 1
+
+    echo "  [OK] 代理稳定模式已应用 (锁定4G + 移动数据保活 + 后台压制)"
+
+    dns_prefetch "vpn" \
+        dns.alidns.com dot.pub \
+        www.cloudflare.com www.google.com \
+        api.cloudflare.com
+
+    se_notify "网络增强 → 代理稳定模式" "已开启代理稳定模式\n锁定4G + 移动数据保活 + 禁后台抢网\n\n若代理软件断流, 请使用下方白名单工具将其加入白名单\n结束使用后请及时恢复默认 (菜单 5)"
+    log_msg "[vpn] 代理稳定模式已应用" "[weaknet]"
+
+    set_weaknet_active "vpn"
+    echo "[OK] 代理稳定模式已生效"
+    echo ""
+    echo "  注意: 已锁定 LTE Only, 非 VoLTE 来电可能无法接通"
+    echo "  代理使用结束请执行 '恢复默认优化' (菜单 5)"
+    return 0
+}
+
+# ----------------------------------------------------------------------
+# 修改点: 新增代理白名单管理小工具（v1.1）
+# ----------------------------------------------------------------------
+validate_package_name() {
+    local pkg="$1"
+    [ -z "$pkg" ] && return 1
+    case "$pkg" in
+        *[!a-zA-Z0-9._-]*) return 1 ;;
+        *) ;;
+    esac
+    case "${pkg%%[!a-zA-Z]*}" in
+        '') return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+validate_uid() {
+    local uid="$1"
+    [ -z "$uid" ] && return 1
+    case "$uid" in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+get_uid_by_package() {
+    local pkg="$1"
+    [ -z "$pkg" ] && return 1
+    local pm_output
+    pm_output=$(pm list packages -U "$pkg" 2>/dev/null | head -1)
+    [ -z "$pm_output" ] && return 1
+    local uid
+    uid=$(echo "$pm_output" | grep -oE 'uid:[0-9]+' | cut -d: -f2)
+    [ -z "$uid" ] && return 1
+    validate_uid "$uid" || return 1
+    echo "$uid"
+    return 0
+}
+
+add_vpn_whitelist() {
+    local pkg="$1"
+    if [ -z "$pkg" ]; then
+        echo "[FAIL] 未提供包名"
+        echo "用法: sh weaknet.sh add-wl <包名>"
+        return 1
+    fi
+    if ! validate_package_name "$pkg"; then
+        echo "[FAIL] 包名格式非法: $pkg"
+        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
+        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
+        return 1
+    fi
+    echo "=== 加入 Data Saver 白名单 ==="
+    echo "  包名: $pkg"
+    local uid
+    uid=$(get_uid_by_package "$pkg")
+    if [ -z "$uid" ]; then
+        echo "  [FAIL] 无法获取 $pkg 的 UID"
+        echo "  请确认包名正确, 且应用已安装"
+        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
+        return 1
+    fi
+    if ! validate_uid "$uid"; then
+        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
+        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+    echo "  UID : $uid"
+    if cmd netpolicy add restrict-background-whitelist "$uid" 2>/dev/null; then
+        echo "  [OK] 已将 $pkg (UID=$uid) 加入后台流量白名单"
+        se_notify "网络增强 → 白名单已添加" "已将 $pkg 加入后台流量白名单\nData Saver 不再限制该应用的后台流量"
+        log_msg "[vpn-wl] 已加入白名单: $pkg (UID=$uid)" "[weaknet]"
+        return 0
+    else
+        echo "  [FAIL] 添加白名单失败"
+        log_msg "[vpn-wl] 添加白名单失败: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+}
+
+remove_vpn_whitelist() {
+    local pkg="$1"
+    if [ -z "$pkg" ]; then
+        echo "[FAIL] 未提供包名"
+        echo "用法: sh weaknet.sh rm-wl <包名>"
+        return 1
+    fi
+    if ! validate_package_name "$pkg"; then
+        echo "[FAIL] 包名格式非法: $pkg"
+        echo "  包名仅允许字母/数字/点/下划线/连字符, 且必须以字母开头"
+        log_msg "[vpn-wl] 包名格式非法: $pkg" "[warn]"
+        return 1
+    fi
+    echo "=== 移出 Data Saver 白名单 ==="
+    echo "  包名: $pkg"
+    local uid
+    uid=$(get_uid_by_package "$pkg")
+    if [ -z "$uid" ]; then
+        echo "  [FAIL] 无法获取 $pkg 的 UID"
+        echo "  请确认包名正确, 且应用已安装"
+        log_msg "[vpn-wl] 获取 UID 失败: $pkg" "[warn]"
+        return 1
+    fi
+    if ! validate_uid "$uid"; then
+        echo "  [FAIL] UID 格式非法: $uid (非纯数字)"
+        log_msg "[vpn-wl] UID 格式非法: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+    echo "  UID : $uid"
+    if cmd netpolicy remove restrict-background-whitelist "$uid" 2>/dev/null; then
+        echo "  [OK] 已将 $pkg (UID=$uid) 移出后台流量白名单"
+        se_notify "网络增强 → 白名单已移除" "已将 $pkg 移出后台流量白名单\n该应用的后台流量将受 Data Saver 限制"
+        log_msg "[vpn-wl] 已移出白名单: $pkg (UID=$uid)" "[weaknet]"
+        return 0
+    else
+        echo "  [FAIL] 移出白名单失败"
+        log_msg "[vpn-wl] 移出白名单失败: $pkg (UID=$uid)" "[warn]"
+        return 1
+    fi
+}
+
+list_vpn_whitelist() {
+    echo "=== 当前 Data Saver 白名单 ==="
+    echo ""
+    local wl_output
+    wl_output=$(cmd netpolicy list restrict-background-whitelist 2>/dev/null)
+    local wl_ret=$?
+    if [ $wl_ret -ne 0 ] || [ -z "$wl_output" ]; then
+        echo "[FAIL] 获取白名单失败 (部分ROM不支持, 或白名单为空)"
+        return 1
+    fi
+    echo "$wl_output"
+    return 0
+}
+
 case "$1" in
     video)        apply_video_mode ;;
     game)         apply_game_mode ;;
@@ -788,7 +702,7 @@ case "$1" in
     *)
         echo "弱网自救工具 v${SE_VERSION}"
         echo ""
-        echo "用法: sh weaknet.sh <模式> [参数]"
+        echo "用法: sh weaknet.sh <模式>"
         echo ""
         echo "可选模式:"
         echo "  video     视频模式 (弱网预加载优化)"
@@ -796,12 +710,6 @@ case "$1" in
         echo "            注意: LTE Only 下非 VoLTE 来电可能无法接通"
         echo "  social    社交模式 (保 WiFi, DNS 预热微信/QQ)"
         echo "  download  下载模式 (高带宽持续传输)"
-        echo "  vpn       代理稳定模式 (锁定4G + 移动数据保活 + 后台压制)"
-        echo "            解决 VPN/代理在网络切换时的断流和后台抢网问题"
-        echo "  add-wl <包名>  加入 Data Saver 白名单 (防止代理软件被误杀)"
-        echo "            示例: sh weaknet.sh add-wl com.v2ray.ang"
-        echo "  rm-wl <包名>   移出 Data Saver 白名单"
-        echo "  list-wl       查看当前白名单"
         echo "  normal    恢复默认优化 (关闭 Data Saver + 恢复 5G + 重启调度器)"
         echo "  status    查看当前状态"
         ;;

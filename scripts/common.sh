@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# common.sh — 网络增强 v1.0 公共函数库
+# common.sh — 网络增强 公共函数库
 #
 # 严格遵循 AxManager 官方插件协议 + 免Root约束
 # 官方文档: https://fahrez182.github.io/AxManager/plugin/what-is-plugin.html

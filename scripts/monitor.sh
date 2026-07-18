@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# monitor.sh — 网络增强 v1.0 动态自适应调度器
+# monitor.sh — 网络增强 动态自适应调度器
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 

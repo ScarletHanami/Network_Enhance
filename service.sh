@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# service.sh — 网络增强 v1.0
+# service.sh — 网络增强
 # AxManager BOOT_COMPLETED late_start service 阶段
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# action.sh — 网络增强 v1.0 用户主动触发脚本
+# action.sh — 网络增强 用户主动触发脚本
 # 提供状态检测、弱网自救、DNS/WiFi/运营商管理、智能调度器、5G/LTE 制式管理
 # 支持交互菜单（无参数）和 CLI 参数模式（sh action.sh <数字>）
 

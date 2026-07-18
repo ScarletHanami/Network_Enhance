@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# dns.sh — 网络增强 v1.0 Private DNS (DoT) 工具
+# dns.sh — 网络增强 Private DNS (DoT) 工具
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 

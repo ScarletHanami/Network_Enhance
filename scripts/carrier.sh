@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# carrier.sh — 运营商识别 & 网络制式优化 v1.0
+# carrier.sh — 运营商识别 & 网络制式优化
 #
 # preferred_network_mode 默认值 (AOSP RILConstants):
 #   电信(telecom): 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA)
@@ -278,7 +278,7 @@ apply_carrier_settings() {
         return 1
     fi
 
-    echo "=== 应用运营商优化: $carrier (v1.0 OEM 兼容版) ==="
+    echo "=== 应用运营商优化: $carrier (OEM 兼容版) ==="
 
     # --- 基础数据设置 ---
     # 保持移动数据常开、优先切换到数据网络、自动切换

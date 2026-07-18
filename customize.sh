@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# customize.sh — 网络增强 v1.0 安装脚本
+# customize.sh — 网络增强 安装脚本
 # 本脚本会被 source（不是执行），不能用 exit，要用 abort
 
 SKIPUNZIP=0
@@ -33,7 +33,7 @@ if [ -z "${MODPATH:-}" ] || [ ! -d "$MODPATH" ]; then
 fi
 
 ui_print "***************************************"
-ui_print "  网络增强 v1.0"
+ui_print "  网络增强"
 ui_print "  AxManager 免Root 网络优化"
 ui_print "  5G假满格自救 + 4G防跳频 + 多品牌兼容"
 ui_print "***************************************"
@@ -146,7 +146,7 @@ esac
 ui_print ""
 
 ui_print "---------------------------------------"
-ui_print "  v1.0 关键特性"
+ui_print "  关键特性"
 ui_print "---------------------------------------"
 ui_print ""
 ui_print "  [新增] 5G 假满格自动降级 (RSRP+SINR+Ping 三维度)"
@@ -160,7 +160,7 @@ ui_print "  [修正] 运营商默认值 (电信27/移动32/广电33)"
 ui_print "  [修正] customize.sh 自检误报缺失 bug"
 ui_print "  [移除] system.prop (persist.* 免Root不生效)"
 ui_print "  [统一] 检测间隔 120 秒 (所有等级)"
-ui_print "  [统一] 命名 network_enhance / 版本 v1.0"
+ui_print "  [统一] 命名 network_enhance"
 ui_print ""
 
 ui_print "---------------------------------------"
@@ -204,7 +204,7 @@ ui_print "  [OK] 权限已设置"
 ui_print ""
 
 ui_print "***************************************"
-ui_print "  ✓ 安装成功 (网络增强 v1.0)"
+ui_print "  ✓ 安装成功 (网络增强)"
 ui_print "***************************************"
 ui_print ""
 ui_print "  日志路径: /data/local/tmp/network_enhance.log"

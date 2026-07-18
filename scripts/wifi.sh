@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# wifi.sh — 网络增强 v1.0 WiFi 优化工具
+# wifi.sh — 网络增强 WiFi 优化工具
 # 用法: sh wifi.sh <apply|status|reset>
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
@@ -38,7 +38,7 @@ apply_wifi() {
         return 0
     }
 
-    echo "=== 应用 WiFi 优化 (v1.0 OEM 兼容版) ==="
+    echo "=== 应用 WiFi 优化 (OEM 兼容版) ==="
 
     # 扫描与漫游
     se_put global wifi_scan_throttle_enabled 0

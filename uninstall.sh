@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# uninstall.sh — 网络增强 v1.0 卸载清理脚本
+# uninstall.sh — 网络增强 卸载清理脚本
 #
 # 卸载时执行完整清理: 
 #   1. 停止调度器进程, 关闭 Data Saver (防止残留导致后台应用无法联网)
@@ -201,5 +201,5 @@ _uninstall_log "运行时残留文件已清理"
 cmd notification cancel network_enhance_monitor 2>/dev/null
 _uninstall_log "通知已撤销"
 
-_uninstall_log "网络增强 v1.0 已卸载"
+_uninstall_log "网络增强 已卸载"
 exit 0

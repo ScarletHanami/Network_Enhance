@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# network_info.sh — 网络增强 v1.0 网络状态采集工具
+# network_info.sh — 网络增强 网络状态采集工具
 #
 # 多策略采集 WiFi/移动网络/5G 信号质量及延迟数据,
 # 优先使用 cmd wifi status (Android 14+ 更稳定),

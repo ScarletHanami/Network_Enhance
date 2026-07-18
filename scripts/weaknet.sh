@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# weaknet.sh — 网络增强 v1.0 弱网自救脚本
+# weaknet.sh — 网络增强 弱网自救脚本
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -126,7 +126,7 @@ silent_reset() {
 # 视频模式 — 弱信号容忍 + 移动数据保活 + DNS 预热
 # ----------------------------------------------------------------------
 apply_video_mode() {
-    echo "=== 应用视频模式 (v1.0) ==="
+    echo "=== 应用视频模式 ==="
     silent_reset
 
     # WiFi 弱信号容忍 + 扫描优化
@@ -183,7 +183,7 @@ apply_video_mode() {
 # 同时开启 Data Saver 防止后台应用抢带宽。
 # 代价: 非 VoLTE 来电无法接通。
 apply_game_mode() {
-    echo "=== 应用游戏模式 (v1.0 锁定 LTE 版) ==="
+    echo "=== 应用游戏模式 (锁定 LTE 版) ==="
     silent_reset
 
     # 关键 1: 调用 carrier.sh lock-lte 锁定 LTE only
@@ -261,7 +261,7 @@ apply_game_mode() {
 # 社交模式
 # ----------------------------------------------------------------------
 apply_social_mode() {
-    echo "=== 应用社交模式 (v1.0) ==="
+    echo "=== 应用社交模式 ==="
     silent_reset
 
     se_put global mobile_data_always_on 1
@@ -301,7 +301,7 @@ apply_social_mode() {
 # 下载模式
 # ----------------------------------------------------------------------
 apply_download_mode() {
-    echo "=== 应用下载模式 (v1.0) ==="
+    echo "=== 应用下载模式 ==="
     silent_reset
 
     se_put global wifi_suspend_optimizations_enabled 0
@@ -461,7 +461,7 @@ show_status() {
 # 代理稳定模式 — 锁定 4G + 移动数据保活 + 后台压制
 # ----------------------------------------------------------------------
 apply_vpn_mode() {
-    echo "=== 应用代理稳定模式 (v1.1) ==="
+    echo "=== 应用代理稳定模式 ==="
     silent_reset
 
     echo "  [..] 锁定 LTE only (防止 5G/4G 切换导致代理隧道断流)..."

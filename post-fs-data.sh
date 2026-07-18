@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# post-fs-data.sh — 网络增强 v1.0
+# post-fs-data.sh — 网络增强
 # AxManager BOOT_COMPLETED first sync 阶段（一次性静态优化）
 # 此阶段仅执行 settings 写入，不启动后台进程
 

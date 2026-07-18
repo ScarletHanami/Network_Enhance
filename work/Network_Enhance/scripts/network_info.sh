@@ -162,6 +162,7 @@ get_wifi_link_speed() {
 #   1. 精确匹配 "Frequency:" 后的 4 位数 (不匹配 mFrequency 旧格式也兼容)
 #   2. 调用 _judge_freq() 判定 >4000=5G, 2000-3000=2.4G
 #   3. 不匹配 Net ID 等无关数字
+
 get_wifi_frequency() {
     local freq=""
     local result=""
@@ -173,7 +174,9 @@ get_wifi_frequency() {
             [0-9][0-9][0-9][0-9]) ;;
             *) return 1 ;;
         esac
-        if [ "$f" -gt 4000 ] 2>/dev/null; then
+        if [ "$f" -ge 5925 ] 2>/dev/null; then
+            echo "6G"; return 0
+        elif [ "$f" -gt 4000 ] 2>/dev/null; then
             echo "5G"; return 0
         elif [ "$f" -ge 2000 ] && [ "$f" -le 3000 ] 2>/dev/null; then
             echo "2.4G"; return 0
@@ -184,36 +187,37 @@ get_wifi_frequency() {
     local dump
     dump=$(dumpsys wifi 2>/dev/null)
 
-    # 阶段 1: dumpsys wifi 精确匹配 "Frequency: 5180MHz" (v1.1.3 用户真实格式)
-    freq=$(echo "$dump" | grep -oE 'Frequency:\s*[0-9]{4}MHz' 2>/dev/null | head -1 | grep -oE '[0-9]{4}')
+    # 阶段 1: dumpsys wifi 匹配 "Frequency: 5180MHz" / "Frequency:5200MHz" (Android 14/15 真实格式)
+    # 使用 POSIX 兼容的 [ ]* 替代 \s*，[0-9][0-9][0-9][0-9] 替代 {4}
+    freq=$(echo "$dump" | grep -o 'Frequency:[ ]*[0-9][0-9][0-9][0-9]MHz' 2>/dev/null | head -1 | grep -o '[0-9][0-9][0-9][0-9]')
     result=$(_judge_freq "$freq")
     [ -n "$result" ] && { echo "$result"; return 0; }
 
-    # 阶段 1b: "Frequency: 5180" (无 MHz 后缀)
-    freq=$(echo "$dump" | grep -oE 'Frequency:\s*[0-9]{4}' 2>/dev/null | head -1 | grep -oE '[0-9]{4}')
+    # 阶段 1b: "Frequency: 5180" / "Frequency:5200" (无 MHz 后缀)
+    freq=$(echo "$dump" | grep -o 'Frequency:[ ]*[0-9][0-9][0-9][0-9]' 2>/dev/null | head -1 | grep -o '[0-9][0-9][0-9][0-9]')
     result=$(_judge_freq "$freq")
     [ -n "$result" ] && { echo "$result"; return 0; }
 
-    # 阶段 2: cmd wifi status 匹配 frequency
+    # 阶段 2: cmd wifi status 匹配 frequency (Android 14+)
     if se_is_android_14_plus; then
-        freq=$(cmd wifi status 2>/dev/null | grep -iE 'frequency' | grep -oE '[0-9]{4}' | head -1)
+        freq=$(cmd wifi status 2>/dev/null | grep -i 'frequency' | grep -o '[0-9][0-9][0-9][0-9]' | head -1)
         result=$(_judge_freq "$freq")
         [ -n "$result" ] && { echo "$result"; return 0; }
     fi
 
     # 阶段 3: 旧 AOSP 格式降级
     # 3a: mFrequency: 5180 或 mFrequency=5180
-    freq=$(echo "$dump" | grep -oE 'mFrequency[=:]\s*[0-9]{4}' 2>/dev/null | head -1 | grep -oE '[0-9]{4}')
+    freq=$(echo "$dump" | grep -o 'mFrequency[=:][ ]*[0-9][0-9][0-9][0-9]' 2>/dev/null | head -1 | grep -o '[0-9][0-9][0-9][0-9]')
     result=$(_judge_freq "$freq")
     [ -n "$result" ] && { echo "$result"; return 0; }
 
     # 3b: frequency=5180 (小写等号)
-    freq=$(echo "$dump" | grep -oE 'frequency=[0-9]{4}' 2>/dev/null | head -1 | grep -oE '[0-9]{4}')
+    freq=$(echo "$dump" | grep -o 'frequency=[0-9][0-9][0-9][0-9]' 2>/dev/null | head -1 | grep -o '[0-9][0-9][0-9][0-9]')
     result=$(_judge_freq "$freq")
     [ -n "$result" ] && { echo "$result"; return 0; }
 
     # 阶段 4: WifiInfo 行内 frequency=5180
-    freq=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -oE 'frequency=[0-9]{4}' 2>/dev/null | head -1 | grep -oE '[0-9]{4}')
+    freq=$(echo "$dump" | grep 'WifiInfo' 2>/dev/null | grep -o 'frequency=[0-9][0-9][0-9][0-9]' 2>/dev/null | head -1 | grep -o '[0-9][0-9][0-9][0-9]')
     result=$(_judge_freq "$freq")
     [ -n "$result" ] && { echo "$result"; return 0; }
 

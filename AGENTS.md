@@ -11,6 +11,7 @@
 - **运行环境**: AxManager (ADB shell, `#!/system/bin/sh`)
 - **最低 Android**: 14 (API 34)
 - **当前版本**: 见 `module.prop` 中的 `version` 和 `versionCode` 字段
+- **CI 构建版本**: CI 构建产物中 `version` 字段被替换为 `v<timestamp>`（如 `v20260719_120000`），`versionCode` 被替换为日期数字（如 `20260719`），与 artifact 名称保持一致
 - **支持的品牌**: 小米/HyperOS, OPPO/ColorOS, vivo/OriginOS, 华为/HarmonyOS, 荣耀/MagicOS, 三星/OneUI
 - **技术约束**: 无 Root 权限，所有操作基于 `settings put/get`、`cmd wifi/netpolicy`、`getprop/setprop`、`dumpsys`
 
@@ -150,7 +151,7 @@ monitor.sh（主循环，120s 周期）
 | 新增/移除品牌支持 | 项目概况（品牌列表）、OEM 兼容策略、可维护性指南（添加新品牌步骤） |
 | 新增场景模式 | 场景模式隔离表、可维护性指南（添加新场景模式步骤） |
 | 修改 WebUI | 代码约定（WebUI 规范）、测试验证要点 |
-| 修改构建流程 | 构建与部署 |
+| 修改构建流程 | 项目概况（CI 构建版本）、build.yml |
 | 调整版本号策略 | 项目概况（当前版本描述） |
 
 判断标准：**如果有人在阅读 AGENTS.md 后会对代码产生错误预期，那就说明需要更新了。**

@@ -136,6 +136,20 @@ monitor.sh（主循环，120s 周期）
 | 视频/社交/下载模式 | 菜单 1/3/4 | 严格让位 | 无 PNM 操作 |
 | 5G 假满格降级 | 自动触发 | 主动执行 | degrade_5g_to_4g (mode=9) |
 
+### 6. 双卡数据采集策略
+
+`network_info.sh` 支持双卡设备（卡1/卡2），通过不同数据源提取：
+
+| 数据项 | 卡1 来源 | 卡2 来源 |
+|--------|----------|----------|
+| **运营商** | `getprop gsm.sim.operator.alpha` → `cut -d',' -f1`（取逗号分隔第一段） | 同主属性 `cut -d',' -f2`（取第二段），fallback 到 `.2` 后缀属性 |
+| **网络制式** | `dumpsys telephony.registry` → `mDataNetworkType` 第一个匹配项 | 同 dumpsys → `sed -n '2p'` 取第二个匹配项 |
+| **信号 dBm/Level** | `dumpsys telephony.registry` → `mDbm`/`mLevel` 第一个匹配项 | 同 dumpsys → `sed -n '2p'` 取第二个匹配项 |
+
+**核心原则：** `dumpsys telephony.registry` 中双卡数据按卡1→卡2顺序排列，用 `sed -n '2p'` 取第二个匹配项，无需 awk 块截取。`getprop gsm.sim.operator.alpha` 在双卡设备上返回逗号分隔值（如 "中国移动,中国联通"），用 `cut -d','` 拆分。
+
+**RAT 编号映射：** `_rat_number_to_name()` 将 `mDataNetworkType` 数值转为可读名称（20→5G NR, 13/19→4G LTE, 3/8/9/10/14/15/17→3G, 1/2/16→2G）。
+
 ---
 
 ## 可维护性指南

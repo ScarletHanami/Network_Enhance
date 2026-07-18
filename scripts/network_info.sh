@@ -193,14 +193,17 @@ get_wifi_frequency() {
 
 # ----------------------------------------------------------------------
 # 运营商信息
+# 双卡设备上 getprop gsm.sim.operator.alpha 返回逗号分隔：中国移动,中国联通
+# 卡1 取第一段，卡2 取第二段（或 .2 后缀属性）
 # ----------------------------------------------------------------------
 get_carrier_name() {
     local name
     name=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
-    # 去逗号后判断空/Unknown（不插卡或无效卡时返回 "," 或 "")
-    name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
+    # 双卡设备返回逗号分隔，取第一段作为卡1
+    name=$(echo "$name" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
         name=$(getprop gsm.operator.alpha 2>/dev/null | head -1)
+        name=$(echo "$name" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
             echo "无SIM"
             return 0
@@ -227,14 +230,12 @@ _rat_number_to_name() {
 }
 
 # 从 dumpsys telephony.registry 提取卡1 (PhoneId=0) 的实时网络制式编号
+# 双卡设备上 mDataNetworkType 按卡1→卡2 顺序出现，head -1 取第一个
 _get_rat_number() {
     local reg rat
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
     [ -z "$reg" ] && { echo ""; return 0; }
-    # mDataNetworkType 是当前数据网络制式，比 getprop 更实时可靠
     rat=$(echo "$reg" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
-    rat=$(echo "$reg" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
     echo ""
 }
@@ -286,26 +287,17 @@ get_mobile_dbm() {
 
 # ----------------------------------------------------------------------
 # 卡2 信息采集（双卡设备）
-# 属性后缀 .2 对应物理卡槽2，dumpsys 中提取 PhoneId=1 块
+# 双卡设备上 dumpsys telephony.registry 中信号数据按卡1→卡2顺序排列
+# 属性后缀 .2 对应物理卡槽2，部分 ROM 不提供 .2 后缀
 # ----------------------------------------------------------------------
 
-# 提取 dumpsys telephony.registry 中 PhoneId=1 的完整块（卡2）
-# 使用 awk 精确截取 PhoneId=1～下一个 PhoneId= 之间，避免混入卡1数据
-_extract_slot2_block() {
-    local reg
+# 从 dumpsys telephony.registry 提取卡2 的实时网络制式编号
+# 双卡设备上 mDataNetworkType 按卡1→卡2 顺序出现，sed -n '2p' 取第二个
+_get_rat_number_2() {
+    local reg rat
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
     [ -z "$reg" ] && { echo ""; return 0; }
-    echo "$reg" | awk '/PhoneId=1/{found=1; next} found && /PhoneId=/{exit} found'
-}
-
-# 从卡2 的 dumpsys 块提取实时网络制式编号
-_get_rat_number_2() {
-    local block rat
-    block=$(_extract_slot2_block)
-    [ -z "$block" ] && { echo ""; return 0; }
-    rat=$(echo "$block" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-    [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
-    rat=$(echo "$block" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    rat=$(echo "$reg" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
     [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
     echo ""
 }
@@ -337,50 +329,60 @@ get_network_type_name_2() {
 
 get_carrier_name_2() {
     local name
+    # 优先从主属性逗号分隔中取第二段（部分 ROM 不提供 .2 后缀）
+    name=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
+    [ -n "$name" ] && name=$(echo "$name" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
+    fi
+    # 无逗号或取失败 → 回退到 .2 后缀属性
     name=$(getprop gsm.sim.operator.alpha.2 2>/dev/null | head -1)
     name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
-    if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
-        name=$(getprop gsm.operator.alpha.2 2>/dev/null | head -1)
-        if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
-            echo ""
-            return 0
-        fi
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
     fi
-    echo "$name"
+    name=$(getprop gsm.operator.alpha.2 2>/dev/null | head -1)
+    name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
+    fi
+    echo ""
 }
 
 get_mobile_dbm_2() {
-    local block dbm
-    block=$(_extract_slot2_block)
-    [ -z "$block" ] && { echo ""; return 0; }
+    local reg dbm
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+    [ -z "$reg" ] && { echo ""; return 0; }
 
-    dbm=$(echo "$block" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    # 卡2 数据位于第二个匹配项，用 sed -n '2p' 取
+    dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    dbm=$(echo "$block" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    dbm=$(echo "$reg" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | sed -n '2p' | sed 's/.*= *//')
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    dbm=$(echo "$block" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+    dbm=$(echo "$reg" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | sed -n '2p' | awk '{print $2}')
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    dbm=$(echo "$block" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
+    # mSignalStrength 行内负数也取第二个
+    dbm=$(echo "$reg" | grep 'mSignalStrength' 2>/dev/null | sed -n '2p' | grep -oE '[-][0-9]+' | head -1)
     [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
 
     echo ""
 }
 
 get_mobile_level_2() {
-    local block level
-    block=$(_extract_slot2_block)
-    [ -z "$block" ] && { echo ""; return 0; }
+    local reg level
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+    [ -z "$reg" ] && { echo ""; return 0; }
 
-    level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+    level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
-    level=$(echo "$block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+    level=$(echo "$reg" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | sed -n '2p' | awk '{print $2}')
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
-    level=$(echo "$block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+    level=$(echo "$reg" | grep -oE 'level = [0-9]+' 2>/dev/null | sed -n '2p' | sed 's/.*= *//')
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
     echo ""

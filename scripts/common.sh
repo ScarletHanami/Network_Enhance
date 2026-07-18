@@ -905,30 +905,31 @@ se_detect_fake_5g() {
 se_get_ping_ms() {
     local result
 
-    # 单次 ping 函数：尝试多个 DNS，返回首个成功延迟
+    # 单次 ping 函数：尝试单个 DNS，成功则 stdout 输出延迟，返回 0
     _ping_one() {
         local host="$1"
+        local result
         if [ -x /system/bin/ping ]; then
             result=$(/system/bin/ping -c 1 -W 2 "$host" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
-            [ -n "$result" ] && return 0
+            [ -n "$result" ] && echo "$result" && return 0
         fi
         result=$(ping -c 1 -W 2 "$host" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
-        [ -n "$result" ] && return 0
+        [ -n "$result" ] && echo "$result" && return 0
         return 1
     }
 
     # 尝试 1: 阿里 DNS
-    if _ping_one 223.5.5.5; then echo "$result"; return 0; fi
+    result=$(_ping_one 223.5.5.5) && [ -n "$result" ] && echo "$result" && return 0
     # 尝试 2: 腾讯 DNS
-    if _ping_one 119.29.29.29; then echo "$result"; return 0; fi
+    result=$(_ping_one 119.29.29.29) && [ -n "$result" ] && echo "$result" && return 0
     # 尝试 3: 114 DNS
-    if _ping_one 114.114.114.114; then echo "$result"; return 0; fi
+    result=$(_ping_one 114.114.114.114) && [ -n "$result" ] && echo "$result" && return 0
 
     # 尝试 4: 本地网关（后台环境兜底）
     local gateway
     gateway=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -1)
     if [ -n "$gateway" ]; then
-        if _ping_one "$gateway"; then echo "$result"; return 0; fi
+        result=$(_ping_one "$gateway") && [ -n "$result" ] && echo "$result" && return 0
     fi
 
     # ping 全部失败时, 使用 nc 测试 DNS 53 端口可达性

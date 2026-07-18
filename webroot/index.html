@@ -24,10 +24,16 @@
 
     body {
       padding: 12px;
-      padding-top: max(12px, env(safe-area-inset-top, 0px));
       padding-bottom: 80px;
       max-width: 600px;
       margin: 0 auto
+    }
+
+    /* 顶部安全区域避让：刘海/挖孔/圆角。用 @supports 探测 max()+env() 组合支持 */
+    @supports (padding: max(0px, env(safe-area-inset-top))) {
+      body {
+        padding-top: max(12px, env(safe-area-inset-top, 0px))
+      }
     }
 
     h1 {
@@ -1039,7 +1045,7 @@
     }
 
     function showExecIndicator(name) {
-      // 取消之前排队的隐藏操作
+      // 取消任何挂起的隐藏定时器
       if (showExecIndicator._hideTimer) { clearTimeout(showExecIndicator._hideTimer); showExecIndicator._hideTimer = null; }
       var bar = document.getElementById('exec-indicator');
       var label = document.getElementById('exec-label');
@@ -1047,19 +1053,13 @@
       if (txt) txt.textContent = (name || '执行中');
       if (bar) bar.className = 'exec-indicator show';
       if (label) label.className = 'exec-label show';
-      showExecIndicator._ts = Date.now();
     }
 
     function hideExecIndicator() {
-      var elapsed = Date.now() - (showExecIndicator._ts || 0);
-      var delay = (elapsed < 350) ? (350 - elapsed) : 0;
-      showExecIndicator._hideTimer = setTimeout(function () {
-        showExecIndicator._hideTimer = null;
-        var bar = document.getElementById('exec-indicator');
-        var label = document.getElementById('exec-label');
-        if (bar) bar.className = 'exec-indicator';
-        if (label) label.className = 'exec-label';
-      }, delay);
+      var bar = document.getElementById('exec-indicator');
+      var label = document.getElementById('exec-label');
+      if (bar) bar.className = 'exec-indicator';
+      if (label) label.className = 'exec-label';
     }
 
     function toast(msg, duration) {
@@ -1104,26 +1104,38 @@
       cmdRunningName = name;
       showExecIndicator(name);
       diag('runCmd: ' + name + ' | ' + cmd.substring(0, 80));
-      exec(cmd, function (errno, stdout, stderr) {
-        try {
-          var ok = (errno === 0 || errno === '0');
-          if (ok) {
-            toast(name + ' 完成');
-            if (stdout && stdout.trim()) {
-              showAlert(name + ' 输出:\n\n' + stdout.substring(0, 3000));
+      // 关键：用双 rAF 让出主线程，确保浏览器先绘制指示器再执行同步阻塞的 exec
+      // Axeron.exec 是同步的，若不yield，className 变更会被合并到 exec 之后的同一帧，导致指示器不显示
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          exec(cmd, function (errno, stdout, stderr) {
+            // 完成时立即隐藏指示器，避免与反馈弹窗同时显示
+            hideExecIndicator();
+            try {
+              var ok = (errno === 0 || errno === '0');
+              if (ok) {
+                toast(name + ' 完成');
+                // 仅当有非空输出时延迟弹窗，避免与 toast 重叠观感
+                if (stdout && stdout.trim()) {
+                  setTimeout(function () {
+                    showAlert(name + ' 输出:\n\n' + stdout.substring(0, 3000), 0);
+                  }, 200);
+                }
+              } else {
+                toast(name + ' 失败 (' + errno + ')');
+                setTimeout(function () {
+                  showAlert(name + ' 失败 (errno=' + errno + '):\n\nstdout: ' + (stdout || '') + '\n\nstderr: ' + (stderr || ''), 0);
+                }, 200);
+              }
+              if (typeof after === 'function') after();
+              // 延迟刷新，避免阻塞当前操作
+              setTimeout(function () { throttledLoad('refreshAll', 500, doRefreshAll); }, 500);
+            } finally {
+              cmdRunning = false;
+              cmdRunningName = '';
             }
-          } else {
-            toast(name + ' 失败 (' + errno + ')');
-            showAlert(name + ' 失败 (errno=' + errno + '):\n\nstdout: ' + (stdout || '') + '\n\nstderr: ' + (stderr || ''));
-          }
-          if (typeof after === 'function') after();
-          // 延迟刷新，避免阻塞当前操作
-          setTimeout(function () { throttledLoad('refreshAll', 500, doRefreshAll); }, 500);
-        } finally {
-          hideExecIndicator();
-          cmdRunning = false;
-          cmdRunningName = '';
-        }
+          });
+        });
       });
     }
 

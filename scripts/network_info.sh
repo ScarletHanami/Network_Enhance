@@ -534,7 +534,7 @@ get_mobile_dbm_2() {
 }
 
 get_mobile_level_2() {
-    local reg block level
+    local reg block level sig_block
 
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
 
@@ -542,6 +542,20 @@ get_mobile_level_2() {
     if [ -n "$reg" ]; then
         block=$(echo "$reg" | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
         if [ -n "$block" ]; then
+            # 优先从 mSignalStrength=SignalStrength: 子块取父级 mLevel（避免子块干扰）
+            sig_block=$(echo "$block" | awk '/mSignalStrength=SignalStrength:/{found=1} found{print; if(++count>=5) exit}' 2>/dev/null)
+            if [ -n "$sig_block" ]; then
+                level=$(echo "$sig_block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+                level=$(echo "$sig_block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+                level=$(echo "$sig_block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+            fi
+
+            # 兜底: 直接从块内取 mLevel
             level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
             [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 

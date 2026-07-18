@@ -634,58 +634,101 @@ se_get_wifi_rssi() {
 # 移动信号 dBm 读取（多格式兼容）
 # ----------------------------------------------------------------------
 se_get_mobile_dbm() {
-    local reg dbm
+    local reg block dbm
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+    [ -z "$reg" ] && { echo ""; return 0; }
 
     # 支持 Android 14+ 格式 + 无效值过滤 (2147483647 = Integer.MAX_VALUE)
 
-    # 模式 1: mDbm=-95 (标准 AOSP，等号)
+    # 方法 1: 从卡1 块 (mPhoneId=0) 内取 mDbm（最精确，避免取到卡2 的）
+    block=$(echo "$reg" | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+    if [ -n "$block" ]; then
+        dbm=$(echo "$block" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$block" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$block" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$block" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
+        [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
+    fi
+
+    # 方法 2: 从第一个 mSignalStrength 块内取 (mSignalStrength 后 30 行)
+    block=$(echo "$reg" | awk '/mSignalStrength/{found=1} found{print; if(++count>=30) exit}' 2>/dev/null)
+    if [ -n "$block" ]; then
+        dbm=$(echo "$block" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$block" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$block" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+    fi
+
+    # 方法 3: 全局第一个 mDbm= (最后兜底)
     dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    # 模式 1b: dbm = -95 (Android 14+ 新格式, 等号两边有空格)
     dbm=$(echo "$reg" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    # 模式 2: mDbm: -95 (部分 ROM 用冒号)
     dbm=$(echo "$reg" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
     [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
 
-    # 模式 3: mSignalStrength 行内第一个负数
     dbm=$(echo "$reg" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
     [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
-
-    # 模式 4: grep -A 30 mSignalStrength 后找 mDbm
-    dbm=$(echo "$reg" | grep -A 30 'mSignalStrength' 2>/dev/null | grep -E 'mDbm|dbm =' | head -1 | grep -oE '[-]?[0-9]+' | head -1)
-    [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
 
     # 全部失败
     echo ""
 }
 
 se_get_mobile_level() {
-    local reg level
+    local reg block level
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+    [ -z "$reg" ] && { echo ""; return 0; }
 
     # 优先采用父级 mSignalStrength.mLevel（系统信号栏显示值，0-4）
     # 不再优先取 mNr 子块 level，因为 NR 子信号等级与整体 mLevel 可能不一致，
     # 会造成"信号越强等级越低"的视觉错乱
 
-    # 模式 1: mLevel=3 (旧 AOSP 格式，父级 mSignalStrength 块第一个 mLevel=)
+    # 方法 1: 从卡1 块 (mPhoneId=0) 内取 mLevel（最精确，避免取到卡2 的）
+    block=$(echo "$reg" | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+    if [ -n "$block" ]; then
+        level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+    fi
+
+    # 方法 2: 从第一个 mSignalStrength 块内取 (mSignalStrength 后 20 行)
+    block=$(echo "$reg" | awk '/mSignalStrength/{found=1} found{print; if(++count>=20) exit}' 2>/dev/null)
+    if [ -n "$block" ]; then
+        level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+    fi
+
+    # 方法 3: 全局第一个 mLevel= (最后兜底)
     level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
-    # 模式 1b: mLevel: 3 (部分 ROM 用冒号)
     level=$(echo "$reg" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
-    # 模式 2: level = 3 (Android 14+ 父级 mSignalStrength 块第一个 level =)
-    # 注意: level = N 在父级和子块都可能出现，head -1 取第一个通常是父级
     level=$(echo "$reg" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
-    [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
-
-    # 模式 3: grep -A 20 mSignalStrength 后找 mLevel
-    level=$(echo "$reg" | grep -A 20 'mSignalStrength' 2>/dev/null | grep -E 'mLevel|level =' | head -1 | grep -oE '[0-9]+' | head -1)
     [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
     echo ""

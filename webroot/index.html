@@ -1249,16 +1249,34 @@
           dbm1El.className = 'stat-value ' + dbmClass(dbm1Val);
 
           // 卡2
-          document.getElementById('mobile-carrier-2').textContent = mobile2.carrier || '-';
-          document.getElementById('mobile-rat-2').textContent = mobile2.rat || '-';
+          var m2Carrier = mobile2.carrier || '';
+          var m2Rat = mobile2.rat || '';
+          var m2Level = mobile2.level || '';
+          var m2Dbm = mobile2.dbm || '';
           var lvl2El = document.getElementById('mobile-level-2');
-          var lvl2Val = mobile2.level || '?';
-          lvl2El.textContent = lvl2Val + '/4';
-          lvl2El.className = 'stat-value ' + levelClass(lvl2Val);
           var dbm2El = document.getElementById('mobile-dbm-2');
-          var dbm2Val = mobile2.dbm || '?';
-          dbm2El.textContent = dbm2Val + ' dBm';
-          dbm2El.className = 'stat-value ' + dbmClass(dbm2Val);
+          var rat2El = document.getElementById('mobile-rat-2');
+          // 卡2 存在（运营商有值）但其他字段全空 → 显示"无服务"
+          var m2NoService = (m2Carrier && !m2Rat && !m2Level && !m2Dbm);
+
+          document.getElementById('mobile-carrier-2').textContent = m2Carrier || '-';
+          if (m2NoService) {
+            rat2El.textContent = '无服务';
+            rat2El.className = 'stat-value bad';
+            lvl2El.textContent = '无服务';
+            lvl2El.className = 'stat-value bad';
+            dbm2El.textContent = '无服务';
+            dbm2El.className = 'stat-value bad';
+          } else {
+            rat2El.textContent = m2Rat || '-';
+            rat2El.className = 'stat-value';
+            var lvl2Val = m2Level || '?';
+            lvl2El.textContent = lvl2Val + '/4';
+            lvl2El.className = 'stat-value ' + levelClass(lvl2Val);
+            var dbm2Val = m2Dbm || '?';
+            dbm2El.textContent = dbm2Val + ' dBm';
+            dbm2El.className = 'stat-value ' + dbmClass(dbm2Val);
+          }
 
           var pingEl = document.getElementById('net-ping');
           var pingVal = data.ping_ms || '?';

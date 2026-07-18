@@ -143,17 +143,32 @@ monitor.sh（主循环，120s 周期）
 | 数据项 | 卡1 来源 | 卡2 来源 |
 |--------|----------|----------|
 | **运营商** | `getprop gsm.sim.operator.alpha` → `cut -d',' -f1`（取逗号分隔第一段） | 同主属性 `cut -d',' -f2`（取第二段），fallback 到 `.2` 后缀属性 |
-| **网络制式** | `_extract_slot1_block()` (mPhoneId=0 块) → `mDataNetworkType` | `_extract_slot2_block()` (mPhoneId=1 块) → `mDataNetworkType`，fallback `mVoiceNetworkType`/`getprop gsm.network.type.2` |
+| **网络制式** | `_extract_slot1_block()` (mPhoneId=0 块) → `mDataNetworkType` | `_extract_slot2_block()` (mPhoneId=1 块) → `mDataNetworkType`，多阶段兜底（见下） |
 | **信号 dBm/Level** | `_extract_slot1_block()` → `mDbm`/`mLevel` (父级) | `_extract_slot2_block()` → `mDbm`/`mLevel` (父级) |
 
 **核心原则：**
 - `dumpsys telephony.registry` 中每个卡槽对应一个 `mPhoneId=N` 块（N=0 是卡1，N=1 是卡2）
 - 用 `_extract_slot1_block()`/`_extract_slot2_block()` (awk flag 模式) 精确截取对应块，避免误取到另一卡的数据
 - 信号等级 (`mLevel`) 必须取**父级** `mSignalStrength.mLevel`（系统信号栏值），不取 `mNr` 子块 level，否则会因 NR 子信号等级与整体 mLevel 不一致造成"信号越强等级越低"的视觉错乱
-- RAT 编号优先 `mDataNetworkType`，缺失时 fallback `mVoiceNetworkType`，最终 `getprop` 兜底
+- RAT 编号优先 `mDataNetworkType`，缺失时 fallback `mVoiceNetworkType`/`mNetworkType` (ROM 变体)，最终 `getprop` 兜底
 - 兜底策略：若 `mPhoneId=` 分块不存在（部分 ROM），回退到全局第 N 个匹配项 (`sed -n '2p'`)
 
+**卡2 RAT 多阶段兜底链（`_get_rat_number_2`）：**
+
+| 阶段 | 数据源 | 适用场景 |
+|------|--------|---------|
+| A | dumpsys 分块 (`mPhoneId=1` 块内 `mDataNetworkType=`/`mDataNetworkType:`/`mVoiceNetworkType=`/`mNetworkType=`) | 标准 AOSP 双卡输出 |
+| B | dumpsys 全局第 2 个匹配项 (`sed -n '2p'`) | 无 `mPhoneId=` 分块标识 |
+| C | `getprop gsm.network.type.2` 后缀属性 → `_str_rat_to_number` | 后缀属性存在 |
+| D | `getprop gsm.network.type` 主属性按逗号拆分取第 2 段 → `_str_rat_to_number` | 与运营商拆分一致 |
+
+**字符串制式映射：** `_str_rat_to_number()` 将 getprop 返回的字符串制式（"NR"/"LTE"/"HSPA"/"UMTS"/"EDGE"/"GPRS"/"GSM"/"CDMA"/"EVDO_*"/"IWLAN"）转为 RAT 编号。
+
 **RAT 编号映射：** `_rat_number_to_name()` 将 `mDataNetworkType` 数值转为可读名称（20→5G NR, 13/19→4G LTE, 3/8/9/10/14/15/17→3G, 1/2/16→2G）。
+
+**卡2 无服务显示策略：**
+- 若 `carrier2` 有值（卡2 物理存在）但 `rat`/`level`/`dbm` 全空（卡2 未激活数据/语音服务），WebUI 显示"无服务"（红色 `.bad` 样式）
+- 否则按正常状态显示
 
 ### 7. 信号等级分类规范（5 级）
 

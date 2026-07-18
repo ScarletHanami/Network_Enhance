@@ -1,22 +1,10 @@
 #!/system/bin/sh
-# customize.sh — 网络增强 v1.0 安装脚本
+# customize.sh — 网络增强 安装脚本
 # 本脚本会被 source（不是执行），不能用 exit，要用 abort
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 修复自检误报缺失 bug（用户细节 2）
-#   - 路径解析增强: pwd + AXERONDIR + MODPATH + 已知路径硬探测
-#   - 安装期自检保持轻量, 不执行耗时网络请求
-# ⚠️ 修改点 3: 移除 system.prop 引用（S2 确认免Root不生效）
-# ⚠️ 修改点 4: OEM 预检更新（含 S3 修正后的运营商默认值）
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 安装脚本
-#   S2 第二步: AxManager 安装期环境约束
-#   用户细节 2: 自检 bug 修复 + 轻量化
 
 SKIPUNZIP=0
 
-# v1.0: MODPATH 健壮性校验
+# MODPATH 健壮性校验
 if [ -z "${MODPATH:-}" ] || [ ! -d "$MODPATH" ]; then
     ui_print "  [!] MODPATH 未设置或不存在，尝试兜底解析..."
     if [ -n "${0:-}" ] && echo "$0" | grep -q '/' 2>/dev/null; then
@@ -45,7 +33,7 @@ if [ -z "${MODPATH:-}" ] || [ ! -d "$MODPATH" ]; then
 fi
 
 ui_print "***************************************"
-ui_print "  网络增强 v1.0"
+ui_print "  网络增强"
 ui_print "  AxManager 免Root 网络优化"
 ui_print "  5G假满格自救 + 4G防跳频 + 多品牌兼容"
 ui_print "***************************************"
@@ -158,7 +146,7 @@ esac
 ui_print ""
 
 ui_print "---------------------------------------"
-ui_print "  v1.0 关键特性"
+ui_print "  关键特性"
 ui_print "---------------------------------------"
 ui_print ""
 ui_print "  [新增] 5G 假满格自动降级 (RSRP+SINR+Ping 三维度)"
@@ -172,7 +160,7 @@ ui_print "  [修正] 运营商默认值 (电信27/移动32/广电33)"
 ui_print "  [修正] customize.sh 自检误报缺失 bug"
 ui_print "  [移除] system.prop (persist.* 免Root不生效)"
 ui_print "  [统一] 检测间隔 120 秒 (所有等级)"
-ui_print "  [统一] 命名 network_enhance / 版本 v1.0"
+ui_print "  [统一] 命名 network_enhance"
 ui_print ""
 
 ui_print "---------------------------------------"
@@ -205,18 +193,18 @@ for _f in config.sh module.prop; do
     fi
 done
 
-# 修改点 3: 确认 system.prop 已移除
+# 确认 system.prop 已移除
 if [ -f "$MODPATH/system.prop" ]; then
-    ui_print "  [WARN] 检测到 system.prop 残留, 删除中..."
+    ui_print "  [WARN] 检测到 system.prop 残留，删除中..."
     rm -f "$MODPATH/system.prop" 2>/dev/null
 fi
-ui_print "  [OK] system.prop 已移除 (persist.* 免Root不生效)"
+ui_print "  [OK] system.prop 已移除（persist.* 免Root不生效）"
 
 ui_print "  [OK] 权限已设置"
 ui_print ""
 
 ui_print "***************************************"
-ui_print "  ✓ 安装成功 (网络增强 v1.0)"
+ui_print "  ✓ 安装成功 (网络增强)"
 ui_print "***************************************"
 ui_print ""
 ui_print "  日志路径: /data/local/tmp/network_enhance.log"

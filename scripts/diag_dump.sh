@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# diag_dump.sh — 网络增强 v1.0 诊断数据抓取脚本
+# diag_dump.sh — 网络增强 诊断数据抓取脚本
 #
 # 用途：抓取设备真实的 dumpsys/cmd/ping 原始输出，用于修正正则匹配规则
 # 用法：sh diag_dump.sh
@@ -8,7 +8,7 @@
 DIAG_FILE="/data/local/tmp/network_enhance_diag.txt"
 
 echo "=========================================="
-echo "  网络增强 v1.0 诊断数据抓取"
+echo "  网络增强 诊断数据抓取"
 echo "=========================================="
 echo ""
 

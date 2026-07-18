@@ -1,21 +1,11 @@
 #!/system/bin/sh
-# common.sh — 网络增强 v1.0 公共函数库
-#
-# ⚠️ 修改点 1: 全部版本号统一为 v1.0（原 6.3.0/6.3.1/6.3.2/6.3.3 全部清除）
-# ⚠️ 修改点 2: 模块名/路径/日志前缀统一为 network_enhance（原 satellite_earth）
-# ⚠️ 修改点 3: 新增 Android 14+ 版本检测（用户补充要求 5）
-# ⚠️ 修改点 4: 新增 5G RSRP/RSRQ/SINR 读取函数（S3 来源）
-# ⚠️ 修改点 5: 新增 5G 假满格判定函数（S3 算法核心）
-# ⚠️ 修改点 6: 新增 cmd wifi status 优先的 RSSI 读取（用户补充要求 4）
-# ⚠️ 修改点 7: 修正运营商默认值（S3 关键修正：电信27/移动32/联通26/广电33）
-# ⚠️ 修改点 8: 修复 customize.sh 自检误报缺失 bug（S1 第一步发现）
-# ⚠️ 修改点 9: 自检系统增强（命令可用性、5G信号、Android版本）
+# common.sh — 网络增强 公共函数库
 #
 # 严格遵循 AxManager 官方插件协议 + 免Root约束
-# 官方文档: https://fahrez182.github.io/AxManager/plugin/what-is-plugin.html (S2)
+# 官方文档: https://fahrez182.github.io/AxManager/plugin/what-is-plugin.html
 
 # ----------------------------------------------------------------------
-# 路径与版本常量（修改点 1+2: 全部统一为 v1.0 / network_enhance）
+# 路径与版本常量
 # ----------------------------------------------------------------------
 SE_VERSION="1.1.3"
 SE_VERSION_CODE="113"
@@ -27,7 +17,7 @@ if [ ! -w "$(dirname "$SE_LOG_FILE")" ] 2>/dev/null; then
     SE_LOG_FILE="/storage/emulated/0/network_enhance.log"
 fi
 
-# 运行时文件（修改点 2: 全部改为 network_enhance 前缀）
+# 运行时文件（network_enhance 前缀统一）
 SE_PID_FILE="/data/local/tmp/network_enhance_monitor.pid"
 SE_STATE_FILE="/data/local/tmp/network_enhance_monitor.state"
 SE_NOTIFY_TAG="network_enhance_monitor"
@@ -36,16 +26,16 @@ SE_NOTIFY_TAG="network_enhance_monitor"
 WEAKNET_ACTIVE_FLAG="/data/local/tmp/network_enhance_weaknet_active"
 DNS_PREFETCH_PID="/data/local/tmp/network_enhance_dns_prefetch.pid"
 
-# 5G 假满格降级备份文件（S3 算法用）
+# 5G 假满格降级备份文件
 SE_5G_BACKUP_FILE="/data/local/tmp/network_enhance_5g_backup"
 
-# 模块 ID（与 module.prop 一致，修改点 2）
+# 模块 ID（与 module.prop 一致）
 SE_MOD_ID="Network_Enhance"
 
 # ======================================================================
-# v6.3.0 核心修复保留：健壮的模块根目录解析
+# 健壮的模块根目录解析
 # ======================================================================
-# 官方源码确认（S2 ExecutePluginAction.kt）:
+# 参考 AxManager ExecutePluginAction.kt:
 #   cmd = 'export PATH=...; cd "<pluginPath>"; sh ./action.sh; RES=$?; cd /; exit $RES'
 # 因此:
 #   - action.sh 的 $0 = "./action.sh"，${0%/*} = "."
@@ -54,7 +44,7 @@ SE_MOD_ID="Network_Enhance"
 #   - $AXERONDIR 在所有阶段可用（AxeronService.getDefaultEnvironment 注入）
 #
 # 策略优先级（按可靠性排序）:
-#   0. $MODDIR 环境变量（用户补充要求 5 新增）
+#   0. $MODDIR 环境变量
 #   1. pwd（脚本启动时 CWD = 模块根目录，最可靠）
 #   2. $AXERONDIR/plugins/$SE_MOD_ID（官方环境变量推导）
 #   3. $MODPATH（仅 customize.sh 阶段）
@@ -64,13 +54,13 @@ SE_MOD_ID="Network_Enhance"
 se_resolve_moddir() {
     local candidate=""
 
-    # 策略 0: 环境变量 MODDIR（用户补充要求 5 新增）
+    # 策略 0: 环境变量 MODDIR
     if [ -n "${MODDIR:-}" ] && [ -f "$MODDIR/module.prop" ] 2>/dev/null; then
         echo "$MODDIR"
         return 0
     fi
 
-    # 策略 1: pwd（最可靠，CWD 在 action.sh 阶段保证是模块根目录）
+    # 策略 1: pwd（CWD 在 action.sh 阶段保证是模块根目录）
     candidate="$(pwd 2>/dev/null)"
     if [ -n "$candidate" ] && [ -f "$candidate/module.prop" ] 2>/dev/null; then
         echo "$candidate"
@@ -116,7 +106,7 @@ se_resolve_moddir() {
         fi
     fi
 
-    # 策略 6: 已知安装路径硬探测（修改点 2: 路径名更新为 Network_Enhance）
+    # 策略 6: 已知安装路径硬探测
     local known_paths="
 /data/user_de/0/com.android.shell/axeron/plugins/$SE_MOD_ID
 /data/user_de/0/android/axeron/plugins/$SE_MOD_ID
@@ -189,32 +179,32 @@ fi
 : "${PING_GOOD_MS:=80}"
 : "${PING_BAD_MS:=200}"
 
-# 检测间隔（修改点: 用户要求统一为 120 秒）
+# 检测间隔（统一为 120 秒）
 : "${MONITOR_MIN_INTERVAL:=120}"
 : "${MONITOR_NORMAL_INTERVAL:=120}"
 : "${MONITOR_MAX_INTERVAL:=120}"
 : "${NETWORK_READY_TIMEOUT:=10}"
 
-# 5G 假满格判定参数（S3 算法 + 用户补充要求 5）
+# 5G 假满格判定参数
 : "${ENABLE_FAKE_5G_DETECTION:=true}"
 : "${FAKE_5G_RSRP_THRESHOLD:=-85}"
 : "${FAKE_5G_SINR_THRESHOLD:=0}"
 : "${FAKE_5G_PING_THRESHOLD:=200}"
 : "${FAKE_5G_RECOVERY_COUNT:=3}"
 
-# 5G 降级后无网络回退参数（用户补充要求 6）
+# 5G 降级后无网络回退参数
 : "${DEGRADE_NO_NET_ROLLBACK_COUNT:=2}"
 
-# 4G+ 跳频防护参数（用户补充要求 2）
+# 4G+ 跳频防护参数
 : "${ENABLE_LTE_LOCK_FOR_GAME:=true}"
 
 # 最低 Android 版本要求
 : "${MIN_API_LEVEL:=34}"
 
 # ----------------------------------------------------------------------
-# Android 版本检测（修改点 3: 用户补充要求 5）
+# Android 版本检测
 # ----------------------------------------------------------------------
-# 来源: S2 AxManager 要求 Android 11+ 无线调试, 用户要求 Android 14+
+# AxManager 要求 Android 11+, 本模块要求 Android 14+
 se_get_api() {
     getprop ro.build.version.sdk 2>/dev/null | head -1
 }
@@ -251,7 +241,7 @@ log_msg() {
 }
 
 # ----------------------------------------------------------------------
-# settings 安全写入/读取/删除（保留 v6.3.0 强化错误吞没）
+# settings 安全写入/读取/删除
 # ----------------------------------------------------------------------
 se_put() {
     local namespace="$1"
@@ -281,11 +271,10 @@ se_del() {
 }
 
 # ----------------------------------------------------------------------
-# settings 写入并验证（修改点 4: 用户补充要求 4 华为/荣耀验证机制）
+# settings 写入并验证（华为/荣耀等受限品牌可靠性验证）
 # ----------------------------------------------------------------------
 # 写入后循环读回验证, 最多 3 秒, 失败则记录日志并返回 1
-# 用户细节提醒 1: settings 命令写入后系统服务同步可能有延迟, 循环验证更健壮
-# 用于关键 settings (如 preferred_network_mode) 在华为/荣耀等受限品牌上的可靠性验证
+# settings 写入后系统服务同步可能有延迟, 循环验证更健壮
 se_put_verify() {
     local namespace="$1"
     local key="$2"
@@ -360,14 +349,10 @@ is_axeron_env() {
 }
 
 # ----------------------------------------------------------------------
-# 网络类型检测（修改点: 直接返回 5G/4G/3G/2G/wifi/none, 避免 dual 中间态）
+# 网络类型检测（返回 5G/4G/3G/2G/wifi/none, 避免 dual 中间态）
 # ----------------------------------------------------------------------
-# 修改点: 用户反馈 "dual" 前端无法直观显示
-#   - dumpsys connectivity 解析失败时, 直接使用 getprop gsm.network.type fallback
-#   - 含 NR 返回 5G, 含 LTE 返回 4G, 含 HSPA/UMTS 返回 3G, 含 EDGE/GPRS 返回 2G
-#   - WiFi 连接返回 wifi
-#   - 避免返回 dual 这种前端无法直观显示的中间态
-# 来源: realme RMX5010 Android 16 API 36 实测反馈
+# dumpsys connectivity 解析失败时 fallback 到 getprop gsm.network.type
+# 双连接时优先返回移动网络制式，前端可直接显示
 se_detect_network_type() {
     local dump
     dump=$(dumpsys connectivity 2>/dev/null)
@@ -387,8 +372,7 @@ se_detect_network_type() {
         mobile_conn=1
     fi
 
-    # 修改点: 双连接时优先返回移动网络制式 (5G/4G), 不再返回 dual
-    # 这样前端可以直接显示用户关心的网络制式
+    # 双连接时优先返回移动网络制式 (5G/4G), 不再返回 dual
     if [ -n "$mobile_conn" ]; then
         # 移动网络已连接, 进一步判定 5G/4G/3G/2G
         local net_type_prop
@@ -408,9 +392,8 @@ se_detect_network_type() {
         return 0
     fi
 
-    # 修改点: dumpsys connectivity 解析失败时, fallback 到 getprop gsm.network.type
-    # 真实输出: NR_SA,Unknown → 含 NR 判定为 5G
-    # 来源: realme RMX5010 Android 16 API 36 实测
+    # dumpsys 解析失败时 fallback 到 getprop gsm.network.type
+    # 真实输出如 NR_SA,Unknown → 含 NR 判定为 5G
     local net_type_prop2
     net_type_prop2=$(getprop gsm.network.type 2>/dev/null | head -1)
     case "$net_type_prop2" in
@@ -434,18 +417,10 @@ se_detect_network_type() {
 }
 
 # ----------------------------------------------------------------------
-# 运营商自动识别（v1.0.1 修复: 兼容双卡/多卡逗号分隔 + 补全 MCC-MNC + alpha 名称匹配）
+# 运营商自动识别（兼容双卡逗号分隔 + MCC-MNC + alpha 名称匹配）
 # ----------------------------------------------------------------------
-# 修改点:
-#   1. 处理带逗号的多个 MCC-MNC 值（双卡设备返回 "46000,46007"）
-#      截取逗号前的第一个值进行匹配
-#   2. 补全移动 MCC-MNC: 46000/46002/46007 全部识别为 mobile
-#   3. 补全其他运营商:
-#      - 46001/46006 = unicom (联通)
-#      - 46003/46005/46011/46012 = telecom (电信)
-#      - 46015 = ctn (广电)
-#   4. 新增 gsm.sim.operator.alpha 名称匹配（CMCC=移动, CUCC=联通, CTCC=电信）
-# 来源: 用户反馈 - 双卡设备返回 "46000,46007" 导致识别失败
+# 双卡设备可能返回 "46000,46007"，截取第一个值匹配
+# 补全 MCC-MNC 范围 + gsm.sim.operator.alpha 名称匹配（CMCC/CUCC/CTCC）
 se_detect_carrier() {
     local mccmnc mccmnc_first alpha
 
@@ -453,14 +428,14 @@ se_detect_carrier() {
     mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
     [ -z "$mccmnc" ] && mccmnc=$(getprop gsm.operator.numeric 2>/dev/null | head -1)
 
-    # 修改点 1: 处理逗号分隔的多个值，取第一个
+    # 处理逗号分隔的多个值，取第一个
     if [ -n "$mccmnc" ]; then
         mccmnc_first=$(echo "$mccmnc" | cut -d',' -f1 | tr -d ' ')
     else
         mccmnc_first=""
     fi
 
-    # 修改点 2+3: 按 MCC-MNC 匹配（补全所有运营商）
+    # 按 MCC-MNC 匹配（补全所有运营商）
     case "$mccmnc_first" in
         # 电信 (telecom): 46003/46005/46011/46012 + 原 46011/46012
         46003|46005|46011|46012)    echo "telecom"; return 0 ;;
@@ -473,7 +448,7 @@ se_detect_carrier() {
         46015|46020)                echo "ctn"; return 0 ;;
     esac
 
-    # 修改点 4: MCC-MNC 匹配失败时，通过运营商名称（alpha）匹配
+    # MCC-MNC 匹配失败时，通过运营商名称（alpha）匹配
     # 双卡设备可能返回 "CMCC,CMCC" 或 "China Mobile,CMCC"
     alpha=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
     [ -z "$alpha" ] && alpha=$(getprop gsm.operator.alpha 2>/dev/null | head -1)
@@ -499,42 +474,41 @@ se_detect_carrier() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 7: 运营商默认 preferred_network_mode 值（S3 关键修正）
+# 运营商默认 preferred_network_mode 值
 # ----------------------------------------------------------------------
-# 来源: S3 AOSP RILConstants.java 权威数值表
+# 参考 AOSP RILConstants.java:
 #   https://android.googlesource.com/platform/frameworks/base/+/master/telephony/java/com/android/internal/telephony/RILConstants.java
-# 修正原模块 bug:
-#   电信原 26 (NR/LTE/GSM/WCDMA, 不含CDMA, 电信会失语音) → 27
-#   移动原 23 (NR only, 丢失4G回退) → 32
-#   广电原 26 → 33
+# 修正说明:
+#   电信 26 (不含CDMA, 失语音) → 27
+#   移动 23 (NR only, 缺4G回退) → 32
+#   广电 26 → 33
 se_get_carrier_default_mode() {
     local carrier="$1"
     case "$carrier" in
-        telecom) echo 27 ;;  # NETWORK_MODE_NR_LTE_CDMA_EVDO_GSM_WCDMA (S3 修正)
-        mobile)  echo 32 ;;  # NETWORK_MODE_NR_LTE_TDSCDMA_GSM_WCDMA (S3 修正)
-        unicom)  echo 26 ;;  # NETWORK_MODE_NR_LTE_GSM_WCDMA (原模块正确)
-        ctn)     echo 33 ;;  # NETWORK_MODE_NR_LTE_TDSCDMA_CDMA_EVDO_GSM_WCDMA (S3 修正)
+        telecom) echo 27 ;;  # NETWORK_MODE_NR_LTE_CDMA_EVDO_GSM_WCDMA
+        mobile)  echo 32 ;;  # NETWORK_MODE_NR_LTE_TDSCDMA_GSM_WCDMA
+        unicom)  echo 26 ;;  # NETWORK_MODE_NR_LTE_GSM_WCDMA
+        ctn)     echo 33 ;;  # NETWORK_MODE_NR_LTE_TDSCDMA_CDMA_EVDO_GSM_WCDMA
         *)       echo 26 ;;  # 默认联通兼容
     esac
 }
 
 # 4G-only 模式（锁定 LTE, 用于游戏模式）
-# 来源: S3 RILConstants.java NETWORK_MODE_LTE_ONLY = 11
+# RILConstants: NETWORK_MODE_LTE_ONLY = 11
 se_get_lte_only_mode() {
     echo 11
 }
 
 # 4G 优先模式（无5G, 用于5G假满格降级）
-# 来源: S3 RILConstants.java NETWORK_MODE_LTE_GSM_WCDMA = 9
+# RILConstants: NETWORK_MODE_LTE_GSM_WCDMA = 9
 se_get_lte_preferred_mode() {
     echo 9
 }
 
 # ----------------------------------------------------------------------
-# 修改点 6: WiFi RSSI 读取（v1.1.2 强容错: 多重 fallback, 数值范围校验）
+# WiFi RSSI 读取（多重 fallback, 数值范围校验）
 # ----------------------------------------------------------------------
-# 来源: v1.1.1 修复后发现部分 ROM 因空格/换行导致严格负数正则匹配失败
-# v1.1.2 策略:
+# 策略:
 #   1. cmd wifi status 提取: 兼容 RSSI: -60 / rssi=-60 / mRssi=-60 等格式
 #      提取到数值后, 只要 -100 到 -10 之间, 认为合法 dBm
 #   2. 正数(0-100)判定为等级或链路速率, 丢弃, 继续下一步
@@ -543,7 +517,7 @@ se_get_lte_preferred_mode() {
 se_get_wifi_rssi() {
     local result raw_val
 
-    # ========== 阶段 1: cmd wifi status 提取 ==========
+    # ====== 阶段 1: cmd wifi status ======
     if se_is_android_14_plus; then
         # 1a: 提取 RSSI 关键字后的数字 (兼容 RSSI: -60 / rssi=-60 / mRssi=-60 / RSSI -60)
         raw_val=$(cmd wifi status 2>/dev/null | grep -iE 'rssi' | grep -oE '[-]?[0-9]+' | head -1)
@@ -561,7 +535,7 @@ se_get_wifi_rssi() {
         fi
     fi
 
-    # ========== 阶段 2: dumpsys wifi 提取 ==========
+    # ====== 阶段 2: dumpsys wifi ======
     local dump
     dump=$(dumpsys wifi 2>/dev/null)
 
@@ -595,13 +569,13 @@ se_get_wifi_rssi() {
         echo "$result"; return 0
     fi
 
-    # ========== 阶段 3: cmd wifi status 任意负数 (非 Android 14+ 也尝试) ==========
+    # ====== 阶段 3: cmd wifi status 任意负数（非 Android 14+ 也尝试）======
     result=$(cmd wifi status 2>/dev/null | grep -iE 'rssi' | grep -oE '\-[0-9]+' | head -1)
     if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
         echo "$result"; return 0
     fi
 
-    # ========== 阶段 4: 兜底 - dumpsys wifi 第一个两位数负数估算 ==========
+    # ====== 阶段 4: 兜底 - dumpsys wifi 第一个两位数负数估算 ======
     result=$(echo "$dump" | grep -oE '\-[0-9]{2}' | head -1)
     if [ -n "$result" ] && [ "$result" -le -10 ] 2>/dev/null && [ "$result" -ge -100 ] 2>/dev/null; then
         log_msg "[wifi] RSSI 使用兜底估算值: $result" "[warn]"
@@ -614,14 +588,13 @@ se_get_wifi_rssi() {
 
 
 # ----------------------------------------------------------------------
-# 移动信号 dBm 读取（保留 v6.3.0 多 ROM 兼容）
+# 移动信号 dBm 读取（多格式兼容）
 # ----------------------------------------------------------------------
 se_get_mobile_dbm() {
     local reg dbm
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 修改点: 新增 Android 14+ 格式 + 无效值过滤 (2147483647 = Integer.MAX_VALUE)
-    # 来源: realme RMX5010 Android 16 API 36 实测
+    # 支持 Android 14+ 格式 + 无效值过滤 (2147483647 = Integer.MAX_VALUE)
 
     # 模式 1: mDbm=-95 (标准 AOSP，等号)
     dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
@@ -651,9 +624,8 @@ se_get_mobile_level() {
     local reg level
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 支持 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
     # 真实输出: ssRsrp = -97 ssRsrq = -11 ssSinr = 8 level = 4 (在 mNr 块内)
-    # 来源: realme RMX5010 Android 16 API 36 实测
     # 模式 0: mNr 块内的 level = 4 (Android 14+ 5G 等级, 优先)
     #   通过 sed 提取 mNr 块到下一个 m 开头字段之间, 再 grep level
     local nr_block
@@ -683,17 +655,17 @@ se_get_mobile_level() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 4: 5G NR 信号质量读取（S3 关键新增）
+# 5G NR 信号质量读取
 # ----------------------------------------------------------------------
-# 来源: S3 CellSignalStrengthNr.java 源码
+# 参考 CellSignalStrengthNr.java:
 #   https://android.googlesource.com/platform/frameworks/base.git/+/master/telephony/java/android/telephony/CellSignalStrengthNr.java
 # 字段说明:
-#   mSsRsrp  = SS-RSRP (5G 同步信号参考功率, 主用信号强度, -156~-31 dBm)
-#   mCsiRsrp = CSI-RSRP (5G 信道状态参考功率, 辅助, -156~-31 dBm)
-#   mSsRsrq  = SS-RSRQ (5G 信号质量, -43~20 dB)
-#   mCsiRsrq = CSI-RSRQ (5G 信道状态信号质量)
-#   mSsSinr  = SS-SINR (5G 信噪比+干扰, -23~40 dB, 关键假满格判定指标)
-#   mCsiSinr = CSI-SINR (5G 信道状态信噪比)
+#   mSsRsrp  = SS-RSRP (同步信号参考功率, 主用, -156~-31 dBm)
+#   mCsiRsrp = CSI-RSRP (信道状态参考功率, 辅助, -156~-31 dBm)
+#   mSsRsrq  = SS-RSRQ (信号质量, -43~20 dB)
+#   mCsiRsrq = CSI-RSRQ (信道状态信号质量)
+#   mSsSinr  = SS-SINR (信噪比+干扰, -23~40 dB, 假满格判定关键指标)
+#   mCsiSinr = CSI-SINR (信道状态信噪比)
 #   mLteRsrp = 4G LTE RSRP (5G 不可用时回退, -140~-44 dBm)
 
 # 5G SS-RSRP 读取（主用信号强度）
@@ -701,18 +673,17 @@ se_get_nr_rsrp() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 支持 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
     # 真实输出: ssRsrp = -97 ssRsrq = -11 ssSinr = 8 level = 4
-    # 来源: realme RMX5010 Android 16 API 36 实测
     # 模式 1: ssRsrp = -97 (Android 14+ 新格式)
     result=$(echo "$reg" | grep -oE 'ssRsrp = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mSsRsrp=-95 (5G SS-RSRP, AOSP 旧格式, S3)
+    # 模式 2: mSsRsrp=-95 (5G SS-RSRP, AOSP 旧格式)
     result=$(echo "$reg" | grep -oE 'mSsRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mCsiRsrp=-95 (5G CSI-RSRP, AOSP 标准, S3)
+    # 模式 3: mCsiRsrp=-95 (5G CSI-RSRP, AOSP 标准)
     result=$(echo "$reg" | grep -oE 'mCsiRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
@@ -720,7 +691,7 @@ se_get_nr_rsrp() {
     result=$(echo "$reg" | grep -oE 'csiRsrp = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 4: mLteRsrp=-95 (4G LTE RSRP, 5G 不可用时回退, S3)
+    # 模式 4: mLteRsrp=-95 (4G LTE RSRP, 5G 不可用时回退)
     result=$(echo "$reg" | grep -oE 'mLteRsrp=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
@@ -741,18 +712,17 @@ se_get_nr_sinr() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 支持 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
     # 真实输出: ssSinr = 8
-    # 来源: realme RMX5010 Android 16 API 36 实测
     # 模式 1: ssSinr = 8 (Android 14+ 新格式)
     result=$(echo "$reg" | grep -oE 'ssSinr = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mSsSinr=13 (5G SS-SINR, AOSP 旧格式, S3)
+    # 模式 2: mSsSinr=13 (5G SS-SINR, AOSP 旧格式)
     result=$(echo "$reg" | grep -oE 'mSsSinr=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mCsiSinr=13 (5G CSI-SINR, S3)
+    # 模式 3: mCsiSinr=13 (5G CSI-SINR)
     result=$(echo "$reg" | grep -oE 'mCsiSinr=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
@@ -777,18 +747,17 @@ se_get_nr_rsrq() {
     local reg result
     reg=$(dumpsys telephony.registry 2>/dev/null)
 
-    # 修改点: 新增 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
+    # 支持 Android 14+ 格式 (无 m 前缀, 等号两边有空格)
     # 真实输出: ssRsrq = -11
-    # 来源: realme RMX5010 Android 16 API 36 实测
     # 模式 1: ssRsrq = -11 (Android 14+ 新格式)
     result=$(echo "$reg" | grep -oE 'ssRsrq = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 2: mSsRsrq=-10 (5G SS-RSRQ, AOSP 旧格式, S3)
+    # 模式 2: mSsRsrq=-10 (5G SS-RSRQ, AOSP 旧格式)
     result=$(echo "$reg" | grep -oE 'mSsRsrq=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
-    # 模式 3: mCsiRsrq=-10 (5G CSI-RSRQ, S3)
+    # 模式 3: mCsiRsrq=-10 (5G CSI-RSRQ)
     result=$(echo "$reg" | grep -oE 'mCsiRsrq=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
     [ -n "$result" ] && [ "$result" != "2147483647" ] && { echo "$result"; return 0; }
 
@@ -809,13 +778,12 @@ se_get_nr_rsrq() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 5: 5G 假满格判定函数（S3 算法核心）
+# 5G 假满格判定
 # ----------------------------------------------------------------------
-# 来源: S3 5G 假满格判定算法 + 用户补充要求
 # 判定条件（满足任一即判定为假满格）:
-#   1. mSsRsrp ≥ -85 (信号强度好) 但 Ping > 200ms
-#   2. mSsRsrp ≥ -85 但 mSsSinr < 0 (信噪比差)
-#   3. mSsRsrp ≥ -85 但 Ping 失败 (丢包)
+#   1. SS-RSRP ≥ -85（信号强度好）但 Ping > 200ms
+#   2. SS-RSRP ≥ -85 但 SS-SINR < 0（信噪比差）
+#   3. SS-RSRP ≥ -85 但 Ping 失败（丢包）
 # 返回值: 0 = 假满格, 1 = 正常
 se_detect_fake_5g() {
     [ "$ENABLE_FAKE_5G_DETECTION" = "true" ] || return 1
@@ -885,21 +853,16 @@ se_detect_fake_5g() {
 }
 
 # ----------------------------------------------------------------------
-# 公网延迟检测（修改点: 增强 ping 容错 + nc 端口可达性 fallback）
+# 公网延迟检测（多重 fallback: ping 绝对路径 → 原生 ping → nc 端口可达性）
 # ----------------------------------------------------------------------
-# 来源: S1 v6.3.3 4 级 fallback + 用户反馈 ADB shell 环境 ping 可能受限
-# 修改点:
-#   1. 优先使用 /system/bin/ping 绝对路径 (绕过 BusyBox applet 差异)
-#   2. ping 全部失败时, 使用 nc -w 2 -z 223.5.5.5 53 测试端口可达性
-#      - 可达 → 返回 2000 (代表延迟较差但连通)
-#      - 彻底不通 → 返回 timeout
-# 来源: realme RMX5010 Android 16 API 36 实测反馈
+# 优先 /system/bin/ping 绝对路径（绕过 BusyBox applet 差异）
+# ping 全部失败时, 使用 nc 测试 DNS 53 端口可达性
+#   - 可达 → 返回 2000（延迟较差但连通）
+#   - 彻底不通 → 返回 timeout
 se_get_ping_ms() {
     local result
 
-    # 修改点 1: 优先使用 /system/bin/ping 绝对路径
-    # 原因: AxManager BusyBox Standalone Mode 下 ping 可能走 applet,
-    #       部分设备 applet 实现存在 SELinux/权限问题
+    # 优先 /system/bin/ping 绝对路径（避免 BusyBox applet SELinux/权限问题）
     if [ -x /system/bin/ping ]; then
         # 方法 1a: /system/bin/ping 阿里 DNS
         result=$(/system/bin/ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
@@ -921,7 +884,7 @@ se_get_ping_ms() {
         fi
     fi
 
-    # 方法 2: 原生 ping 阿里 DNS (兜底, 走 PATH 中的 ping)
+    # 方法 2: 原生 ping 阿里 DNS（PATH 中的 ping 兜底）
     result=$(ping -c 1 -W 2 223.5.5.5 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/' | cut -d. -f1)
     if [ -n "$result" ]; then
         echo "$result"
@@ -954,9 +917,9 @@ se_get_ping_ms() {
         fi
     fi
 
-    # 修改点 2: ping 全部失败时, 使用 nc 测试端口可达性
-    # 来源: 用户反馈 - 在 AxManager ADB shell 环境下 ping 可能因 SELinux 受限
-    #   - nc 可达 → 返回 2000 (代表延迟较差但连通)
+    # ping 全部失败时, 使用 nc 测试 DNS 53 端口可达性
+    # AxManager ADB shell 环境下 ping 可能因 SELinux 受限, nc 可作为替代
+    #   - nc 可达 → 返回 2000（延迟较差但连通）
     #   - 彻底不通 → 返回 timeout
     if command -v nc >/dev/null 2>&1; then
         # 测试阿里 DNS 53 端口
@@ -976,7 +939,7 @@ se_get_ping_ms() {
         fi
     fi
 
-    # 修改点 3: 全部失败时返回 timeout (而非 ?, 让前端明确显示网络不通)
+    # 全部失败时返回 timeout（让前端明确显示网络不通）
     echo "timeout"
     return 0
 }
@@ -1015,7 +978,7 @@ se_monitor_pid() {
 }
 
 # ======================================================================
-# 动态参数计算引擎（保留 v6.3.3）
+# 动态参数计算引擎
 # ======================================================================
 se_clamp() {
     local v="$1" min="$2" max="$3"
@@ -1113,9 +1076,8 @@ se_mobile_level() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点: 4 级综合判定（新增 SINR 维度, S3）
+# 4 级综合判定（含 SINR 维度）
 # ----------------------------------------------------------------------
-# 来源: S3 4 级判定标准 + 用户补充要求
 #   strong:  RSSI ≥ -60 且 Ping < 80ms 且 SINR ≥ 10
 #   normal:  RSSI -60~-75 或 Ping 80~150ms
 #   weak:    RSSI -75~-90 或 Ping 150~200ms
@@ -1135,7 +1097,7 @@ se_overall_level() {
         esac
     fi
 
-    # SINR 维度判定（S3 新增）
+    # SINR 维度判定
     local sinr_critical=0
     if [ -n "$nr_sinr" ] && [ "$nr_sinr" != "?" ]; then
         case "$nr_sinr" in
@@ -1164,7 +1126,7 @@ se_overall_level() {
         *)      base_level="normal" ;;
     esac
 
-    # SINR < 0 直接降级到 critical（S3）
+    # SINR < 0 直接降级到 critical
     if [ "$sinr_critical" = "1" ]; then
         echo "critical"
         return
@@ -1241,16 +1203,15 @@ se_compute_dynamic_params() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 8+9: 模块自检（修复 customize.sh 误报 + 增强检测项）
+# 模块自检
 # ----------------------------------------------------------------------
-# 修复 S1 第一步发现: 原 se_self_check 在 MODDIR_ROOT 未解析时 check_dir 为空,
-#   导致报告 customize.sh 缺失
+# 修复: MODDIR_ROOT 未解析时 check_dir 为空导致 customize.sh 误报缺失
 # 增强: 新增 Android 版本、命令可用性、5G 信号质量检测
 se_self_check() {
     echo "=== 网络增强 v${SE_VERSION} 自检 ==="
     echo ""
 
-    # 修改点 8: check_dir 无效时用 pwd 兜底（修复 customize.sh 误报缺失 bug）
+    # check_dir 无效时用 pwd 兜底（修复 customize.sh 误报缺失 bug）
     local check_dir="${MODDIR_ROOT:-${MODPATH:-${MODDIR:-}}}"
     if [ -z "$check_dir" ] || [ ! -d "$check_dir" ]; then
         check_dir="$(pwd 2>/dev/null)"
@@ -1303,7 +1264,6 @@ se_self_check() {
     fi
     echo ""
 
-    # 修改点 9: Android 版本检测（新增）
     echo "[Android 版本]"
     local api
     api=$(se_get_api)
@@ -1315,7 +1275,6 @@ se_self_check() {
     fi
     echo ""
 
-    # 修改点 9: 命令可用性检测（新增）
     echo "[命令可用性]"
     if cmd wifi status >/dev/null 2>&1; then
         echo "  cmd wifi status      : OK 可用"
@@ -1360,7 +1319,6 @@ se_self_check() {
     echo "  MONITOR_NORMAL_INTERVAL = ${MONITOR_NORMAL_INTERVAL}s (统一120s)"
     echo ""
 
-    # 修改点 9: 5G 信号质量检测（新增）
     echo "[实时信号]"
     local rssi dbm ping_ms nr_rsrp nr_sinr nr_rsrq
     rssi=$(se_get_wifi_rssi)

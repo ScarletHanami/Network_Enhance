@@ -1,16 +1,5 @@
 #!/system/bin/sh
-# dns.sh — 网络增强 v1.0 Private DNS (DoT) 工具
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 新增智能 DNS 选择机制（用户原始要求 6）
-#   - select_best_dot() 函数: 对 6 家 DoT 提供商做 ping 测试, 选延迟最低的
-#   - enable_private_dns 支持 auto 参数自动选择
-# ⚠️ 修改点 3: 保留 S1 v6.3.1 空值容错
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 DNS 工具
-#   S3 第三步: DoT 命令验证 (settings put global private_dns_mode hostname)
-#   用户原始要求 6: 增加 DNS 选择机制（根据延迟自动选择最优 DoT 服务器）
+# dns.sh — 网络增强 Private DNS (DoT) 工具
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -40,7 +29,7 @@ _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; 
 unset _se_common _se_find_common
 
 # ----------------------------------------------------------------------
-# DoT 提供商列表（保留 S1 v6.3.0）
+# DoT 提供商列表
 # ----------------------------------------------------------------------
 # 格式: 简称 主机名 说明
 PROVIDERS="ali dns.alidns.com 阿里DNS(国内推荐)
@@ -65,10 +54,8 @@ get_provider_host() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: 智能 DNS 选择机制（用户原始要求 6）
+# 智能 DNS 选择 — 对 6 家 DoT 提供商做 ping 测试, 选延迟最低的
 # ----------------------------------------------------------------------
-# 来源: 用户原始要求 6 + S3 ping 测试方法
-# 对所有 DoT 提供商做 ping 测试, 选延迟最低的
 # 返回: 最优提供商的主机名
 select_best_dot() {
     echo "=== 智能 DNS 选择 (测试 6 家提供商延迟) ===" >&2
@@ -108,7 +95,7 @@ select_best_dot() {
 }
 
 # ----------------------------------------------------------------------
-# DoT 端口可达性检查（保留 S1）
+# DoT 端口可达性检查
 # ----------------------------------------------------------------------
 check_dot_reachable() {
     local host="$1"
@@ -135,12 +122,12 @@ check_dot_reachable() {
 }
 
 # ----------------------------------------------------------------------
-# 启用 Private DNS（修改点 2: 支持 auto 参数）
+# 启用 Private DNS（支持 auto 参数触发智能选择）
 # ----------------------------------------------------------------------
 enable_private_dns() {
     local host
 
-    # 修改点 2: auto 参数触发智能选择
+    # auto 参数触发智能选择
     if [ "$1" = "auto" ] || [ "$1" = "best" ]; then
         echo "=== 启用 Private DNS (智能选择模式) ==="
         host=$(select_best_dot)
@@ -172,9 +159,7 @@ enable_private_dns() {
     old_spec=$(se_get global private_dns_spec)
     echo "  旧设置: mode=${old_mode:-无} spec=${old_spec:-无}"
 
-    # 来源: S3 确认免Root可用
-    # adb shell settings put global private_dns_mode hostname
-    # adb shell settings put global private_dns_spec <host>
+    # 免 Root 可用: settings put global private_dns_mode hostname / private_dns_spec
     se_put global private_dns_mode "hostname"
     se_put global private_dns_spec "$host"
 
@@ -207,7 +192,7 @@ enable_private_dns() {
 }
 
 # ----------------------------------------------------------------------
-# 禁用 / 恢复默认（保留 S1）
+# 禁用 / 恢复默认
 # ----------------------------------------------------------------------
 disable_private_dns() {
     echo "=== 禁用 Private DNS ==="
@@ -229,7 +214,7 @@ reset_private_dns() {
 }
 
 # ----------------------------------------------------------------------
-# 状态显示（保留 S1 v6.3.1 空值容错）
+# 状态显示（含空值容错）
 # ----------------------------------------------------------------------
 show_status() {
     local mode spec
@@ -273,7 +258,7 @@ case "$1" in
     reset|default) reset_private_dns ;;
     check|test) check_dot_reachable "$2" ;;
     list|providers) list_providers ;;
-    auto|best)  # 修改点 2: 新增 auto 子命令
+    auto|best)  # 智能选择模式
         enable_private_dns "auto"
         ;;
     status) show_status ;;

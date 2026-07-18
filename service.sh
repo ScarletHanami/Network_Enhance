@@ -1,18 +1,6 @@
 #!/system/bin/sh
-# service.sh — 网络增强 v1.0
+# service.sh — 网络增强
 # AxManager BOOT_COMPLETED late_start service 阶段
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: monitor.sh 主循环必须且只能在此启动（用户细节 2）
-#   - 通过 nohup 后台启动
-#   - 启动前调用 wait_network_ready 确保网络就绪
-# ⚠️ 修改点 3: late_start 阶段验证（重新应用 settings, 防止系统重置）
-# ⚠️ 修改点 4: DNS 预热（后台执行, 不阻塞）
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 service.sh 框架
-#   S2 第二步: AxManager 生命周期 (BOOT_COMPLETED late_start)
-#   用户细节 2: post-fs-data.sh 与 service.sh 职责分离
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -48,7 +36,7 @@ sleep 3
 log_msg "网络增强 v${SE_VERSION} service.sh 启动 (late_start) pwd=$(pwd)" "[boot]"
 
 # ===============================
-# late_start 阶段验证（修改点 3: 重新应用 settings, 防止系统重置）
+# late_start 阶段验证 — 重新应用 settings, 防止系统重置
 # ===============================
 verify_and_reapply() {
     [ "$ENABLE_LATE_VERIFY" = "true" ] || return 0
@@ -96,7 +84,7 @@ verify_and_reapply() {
 }
 
 # ===============================
-# DNS 预热（修改点 4: 后台执行, 不阻塞）
+# DNS 预热 — 后台执行, 不阻塞
 # ===============================
 apply_dns_prefetch() {
     [ "$ENABLE_DNS_PREFETCH" = "true" ] || return 0
@@ -118,7 +106,7 @@ apply_dns_prefetch() {
 }
 
 # ===============================
-# 网络状态快照（保留 S1）
+# 网络状态快照
 # ===============================
 log_network_snapshot() {
     log_msg "--- 网络状态快照 ---" "[snapshot]"
@@ -134,12 +122,10 @@ log_network_snapshot() {
 }
 
 # ===============================
-# 修改点 2: 启动智能调度器（monitor.sh 主循环）
+# 启动智能调度器（monitor.sh 主循环）
 # ===============================
-# 来源: 用户细节 2
-#   - monitor.sh 主循环必须且只能在此 (late_start) 阶段启动
-#   - 通过 nohup 后台启动, 不阻塞 service.sh
-#   - 启动前调用 wait_network_ready 确保网络就绪
+# monitor.sh 主循环必须且只能在此 (late_start) 阶段通过 nohup 后台启动,
+# 不阻塞 service.sh。启动前调用 wait_network_ready 确保网络就绪。
 start_smart_monitor() {
     [ "$ENABLE_MONITOR" = "true" ] || return 0
     if [ ! -f "$MODDIR/scripts/monitor.sh" ]; then

@@ -24,7 +24,7 @@ jobs:
           mkdir -p staging
           # Sync version/versionCode with artifact timestamp
           TIMESTAMP="${{ steps.timestamp.outputs.value }}"
-          sed -i "s/^version=.*/version=v${TIMESTAMP}/" module.prop
+          sed -i "s/^version=.*/version=ci_${TIMESTAMP}/" module.prop
           sed -i "s/^versionCode=.*/versionCode=${TIMESTAMP%%_*}/" module.prop
           rsync -a --exclude='.git/' --exclude='.github/' --exclude='.gitignore' \
             --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.7z' \

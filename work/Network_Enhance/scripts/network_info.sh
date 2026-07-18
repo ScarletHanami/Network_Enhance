@@ -174,9 +174,9 @@ get_wifi_frequency() {
             [0-9][0-9][0-9][0-9]) ;;
             *) return 1 ;;
         esac
-        if [ "$f" -ge 5925 ] 2>/dev/null; then
+        if [ "$f" -ge 5925 ] && [ "$f" -le 7125 ] 2>/dev/null; then
             echo "6G"; return 0
-        elif [ "$f" -gt 4000 ] 2>/dev/null; then
+        elif [ "$f" -gt 4000 ] && [ "$f" -lt 5925 ] 2>/dev/null; then
             echo "5G"; return 0
         elif [ "$f" -ge 2000 ] && [ "$f" -le 3000 ] 2>/dev/null; then
             echo "2.4G"; return 0

@@ -1,0 +1,14 @@
+*.zip
+*.tar.gz
+*.7z
+*.rar
+*.log
+*.pid
+*.state
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
+tmp/
+temp/
+

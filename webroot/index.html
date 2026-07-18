@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>网络增强 v1.0</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0a0e1a;color:#e4e8f0;font-size:14px;line-height:1.5}
+  body{padding:12px;padding-bottom:80px;max-width:600px;margin:0 auto}
+  h1{font-size:18px;margin:0 0 2px;font-weight:600;color:#7ab8ff}
+  .header{padding:8px 0 12px;border-bottom:1px solid #1e2638;margin-bottom:12px}
+  .header .ver{font-size:11px;color:#5a6478;margin-top:2px}
+  .card{background:#131826;border:1px solid #1e2638;border-radius:8px;padding:12px;margin-bottom:10px}
+  .card-title{font-size:13px;color:#8b95ad;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+  .card-title .badge{background:#1e2a45;color:#7ab8ff;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:500}
+  .card-title .badge.ok{background:#1a3a28;color:#5dd4a3}
+  .card-title .badge.warn{background:#3a2e1a;color:#f0b056}
+  .card-title .badge.err{background:#3a1a1f;color:#ff6b7a}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .stat{padding:6px 8px;background:#0f1422;border-radius:4px;border:1px solid #1e2638}
+  .stat-label{font-size:10px;color:#6b7589;margin-bottom:1px}
+  .stat-value{font-size:13px;color:#e4e8f0;font-weight:500;word-break:break-all}
+  .stat-value.small{font-size:11px}
+  .stat-value.good{color:#5dd4a3}.stat-value.warn{color:#f0b056}.stat-value.bad{color:#ff6b7a}
+  .btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .btn-grid.cols-3{grid-template-columns:1fr 1fr 1fr}
+  .btn{background:#1a2342;color:#7ab8ff;border:1px solid #2a3458;padding:9px 6px;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center;font-family:inherit}
+  .btn:hover{background:#22305f;border-color:#3a4878}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:#1e3a5f;color:#a8d4ff;border-color:#2a4a78}
+  .btn.success{background:#1a3a28;color:#5dd4a3;border-color:#2a5540}
+  .btn.warn{background:#3a2e1a;color:#f0b056;border-color:#5a4528}
+  .btn.danger{background:#3a1a1f;color:#ff6b7a;border-color:#5a2a30}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#1e2638;color:#e4e8f0;padding:10px 16px;border-radius:6px;border:1px solid #2a3458;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:1000;max-width:90%;text-align:center}
+  .toast.show{opacity:1}
+  .diag{background:#0a0e1a;border:1px solid #3a2e1a;border-radius:4px;padding:8px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;line-height:1.5;color:#f0b056;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:8px}
+  .diag.err{color:#ff6b7a;border-color:#3a1a1f}
+  .diag.ok{color:#5dd4a3;border-color:#1a3a28}
+  .footer{position:fixed;bottom:0;left:0;right:0;background:#0a0e1a;border-top:1px solid #1e2638;padding:8px 12px;text-align:center;font-size:10px;color:#5a6478}
+  details summary{cursor:pointer;color:#7ab8ff;font-size:12px;padding:4px 0}
+  details[open] summary{margin-bottom:6px}
+  .alert-box{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#1e2638;color:#e4e8f0;padding:12px 16px;border-radius:6px;border:1px solid #2a3458;font-size:12px;z-index:2000;max-width:90%;text-align:left;white-space:pre-wrap;word-break:break-all;display:none;box-shadow:0 4px 12px rgba(0,0,0,.5);max-height:70vh;overflow-y:auto}
+  .alert-box.show{display:block}
+  .alert-box .close{color:#7ab8ff;cursor:pointer;float:right;font-weight:bold;margin-left:8px}
+  .log-view{background:#0a0e1a;border:1px solid #1e2638;border-radius:4px;padding:8px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;line-height:1.5;color:#a8b3c8;max-height:250px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+  .log-view .log-warn{color:#f0b056}
+  .log-view .log-err{color:#ff6b7a}
+  .api-banner{padding:8px;border-radius:4px;font-size:11px;margin-bottom:8px;display:none}
+  .api-banner.ok{background:#1a3a28;color:#5dd4a3;display:block}
+  .api-banner.warn{background:#3a2e1a;color:#f0b056;display:block}
+  .api-banner.err{background:#3a1a1f;color:#ff6b7a;display:block}
+  .fake5g-warn{background:#3a1a1f;color:#ff6b7a;padding:6px 8px;border-radius:4px;font-size:11px;margin-top:4px;display:none}
+  .fake5g-warn.show{display:block}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>网络增强</h1>
+  <div class="ver">v1.0 · <span id="env-info">初始化...</span></div>
+</div>
+
+<div class="api-banner" id="api-banner"></div>
+
+<details open id="diag-panel">
+  <summary style="color:#f0b056">⚠ 诊断面板 (出现问题请展开查看)</summary>
+  <div class="card">
+    <div class="card-title">
+      <span>API 状态</span>
+      <button class="btn" style="padding:4px 8px;font-size:11px" onclick="runDiagnostics()">重新诊断</button>
+    </div>
+    <div class="diag" id="diag-output">等待诊断...</div>
+    <div style="margin-top:8px">
+      <button class="btn warn" style="width:100%" onclick="testExec()">测试 exec</button>
+    </div>
+  </div>
+</details>
+
+<div style="margin:8px 0">
+  <button class="btn primary" style="width:100%" onclick="refreshAll()">刷新全部状态</button>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>网络状态</span>
+    <span class="badge" id="net-badge">未检测</span>
+  </div>
+  <div class="grid" id="net-grid">
+    <div class="stat"><div class="stat-label">网络类型</div><div class="stat-value" id="net-type">-</div></div>
+    <div class="stat"><div class="stat-label">公网延迟</div><div class="stat-value" id="net-ping">-</div></div>
+    <div class="stat"><div class="stat-label">WiFi SSID</div><div class="stat-value small" id="wifi-ssid">-</div></div>
+    <div class="stat"><div class="stat-label">WiFi RSSI</div><div class="stat-value" id="wifi-rssi">-</div></div>
+    <div class="stat"><div class="stat-label">WiFi 链路速率</div><div class="stat-value" id="wifi-speed">-</div></div>
+    <div class="stat"><div class="stat-label">WiFi 频段</div><div class="stat-value" id="wifi-freq">-</div></div>
+    <div class="stat"><div class="stat-label">运营商</div><div class="stat-value small" id="mobile-carrier">-</div></div>
+    <div class="stat"><div class="stat-label">网络制式</div><div class="stat-value" id="mobile-rat">-</div></div>
+    <div class="stat"><div class="stat-label">移动信号 Level</div><div class="stat-value" id="mobile-level">-</div></div>
+    <div class="stat"><div class="stat-label">移动信号 dBm</div><div class="stat-value" id="mobile-dbm">-</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>5G 信号质量</span>
+    <span class="badge" id="nr-badge">未检测</span>
+  </div>
+  <div class="grid">
+    <div class="stat"><div class="stat-label">NR RSRP (dBm)</div><div class="stat-value" id="nr-rsrp">-</div></div>
+    <div class="stat"><div class="stat-label">NR RSRQ (dB)</div><div class="stat-value" id="nr-rsrq">-</div></div>
+    <div class="stat"><div class="stat-label">NR SINR (dB)</div><div class="stat-value" id="nr-sinr">-</div></div>
+    <div class="stat"><div class="stat-label">假满格判定</div><div class="stat-value" id="fake5g-status">-</div></div>
+  </div>
+  <div class="fake5g-warn" id="fake5g-warn">⚠ 检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>弱网自救</span>
+    <span class="badge" id="weaknet-badge">未知</span>
+  </div>
+  <div class="btn-grid">
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
+    <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')" style="grid-column:1/-1">恢复默认优化</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>5G/LTE 制式管理</span>
+  </div>
+  <div class="btn-grid cols-3">
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
+    <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
+    <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
+  </div>
+  <div style="font-size:10px;color:#6b7589;margin-top:6px">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>智能调度器</span>
+    <span class="badge" id="monitor-badge">未知</span>
+  </div>
+  <div class="grid" style="margin-bottom:8px">
+    <div class="stat"><div class="stat-label">当前等级</div><div class="stat-value small" id="mon-level">-</div></div>
+    <div class="stat"><div class="stat-label">5G降级状态</div><div class="stat-value small" id="mon-fake5g">-</div></div>
+  </div>
+  <div class="btn-grid cols-3">
+    <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh start', '启动')">启动</button>
+    <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh stop', '停止')">停止</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh restart', '重启')">重启</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh detect', '单次检测')">检测</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh notify', '测试通知')">通知</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh cancel', '撤销通知')">撤销</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    <span>Private DNS (DoT)</span>
+    <span class="badge" id="dns-badge">未知</span>
+  </div>
+  <div style="font-size:11px;color:#8b95ad;margin-bottom:6px">模式: <span id="dns-mode">-</span> | 主机: <span id="dns-spec">-</span></div>
+  <div class="btn-grid cols-3">
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on dnspod', 'DNSPod')">DNSPod</button>
+    <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh auto', '智能选择')">智能选择</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh off', '禁用DNS')">禁用</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh status', 'DNS状态')">状态</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title"><span>WiFi / 运营商</span></div>
+  <div class="btn-grid">
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh apply', '应用运营商')">应用运营商</button>
+    <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh status', '运营商状态')">运营商状态</button>
+  </div>
+</div>
+
+<details>
+  <summary>维护 / 日志 / 自检</summary>
+  <div class="card">
+    <div class="btn-grid">
+      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 26', '模块自检')">模块自检</button>
+      <button class="btn danger" onclick="confirmReset()">一键还原</button>
+      <button class="btn" onclick="loadLog()">刷新日志</button>
+      <button class="btn danger" onclick="clearLog()">清空日志</button>
+    </div>
+    <div class="log-view" id="log-view" style="margin-top:8px">点击"刷新日志"加载</div>
+  </div>
+</details>
+
+<div class="footer">网络增强 v1.0 · MIT License · AxManager 免Root · 5G假满格自救版</div>
+<div class="toast" id="toast"></div>
+<div class="alert-box" id="alert-box"><span class="close" onclick="hideAlert()">×</span><div id="alert-content"></div></div>
+
+<script>
+// ======================================================================
+// 网络增强 v1.0 WebUI
+// 保留 S1 v6.3.0 路径修复 + exec 容错增强框架
+// 修改点 1: 命名统一为 network_enhance / v1.0
+// 修改点 2: 路径硬编码 Satellite_Earth → Network_Enhance
+// 修改点 3: 新增 5G 信号质量区块（RSRP/SINR/假满格判定）
+// 修改点 4: 新增 5G/LTE 制式管理按钮（菜单 30/31/32 严格对应）
+// 修改点 5: 新增智能 DNS 选择按钮（dns.sh auto）
+// ======================================================================
+
+var MODDIR = '';
+var diagLog = [];
+var API_READY = false;
+var API_TYPE = '';
+var apiRetryCount = 0;
+var MAX_API_RETRY = 3;
+
+function diag(msg, level) {
+  var ts = new Date().toLocaleTimeString();
+  var line = '[' + ts + '] ' + msg;
+  diagLog.push(line);
+  if (diagLog.length > 80) diagLog.shift();
+  var el = document.getElementById('diag-output');
+  if (el) {
+    el.className = 'diag' + (level === 'err' ? ' err' : level === 'ok' ? ' ok' : '');
+    el.textContent = diagLog.join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+  console.log('[diag]', msg);
+}
+
+function setApiBanner(level, msg) {
+  var el = document.getElementById('api-banner');
+  if (!el) return;
+  el.className = 'api-banner ' + level;
+  el.textContent = msg;
+}
+
+function detectApi() {
+  if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
+    return 'axeron';
+  }
+  if (typeof ksu !== 'undefined' && typeof ksu.exec === 'function') {
+    return 'ksu-async';
+  }
+  return 'none';
+}
+
+function waitApiReady(callback) {
+  apiRetryCount++;
+  var apiType = detectApi();
+
+  if (apiType !== 'none') {
+    API_READY = true;
+    API_TYPE = apiType;
+    diag('✓ API 就绪: ' + apiType, 'ok');
+    setApiBanner('ok', '✓ API 就绪: ' + apiType);
+    callback(true);
+    return;
+  }
+
+  if (apiRetryCount >= MAX_API_RETRY) {
+    diag('✗ API 探测失败', 'err');
+    setApiBanner('err', '✗ API 不可用 (Axeron=' + (typeof Axeron) + ', ksu=' + (typeof ksu) + ')');
+    callback(false);
+    return;
+  }
+
+  setApiBanner('warn', '⏳ API 初始化中... (' + apiRetryCount + '/' + MAX_API_RETRY + ')');
+  setTimeout(function() { waitApiReady(callback); }, 300);
+}
+
+function execSync(cmd) {
+  if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
+    try {
+      var json = Axeron.exec(cmd, '{}');
+      var result = JSON.parse(json);
+      return {
+        errno: (result.errno !== undefined) ? result.errno : 0,
+        stdout: result.stdout || '',
+        stderr: result.stderr || ''
+      };
+    } catch(e) {
+      diag('Axeron.exec 异常: ' + e, 'err');
+      return null;
+    }
+  }
+  return null;
+}
+
+function exec(cmd, callback) {
+  diag('exec: ' + cmd.substring(0, 100));
+
+  if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
+    try {
+      var json = Axeron.exec(cmd, '{}');
+      var result = JSON.parse(json);
+      var errno = (result.errno !== undefined) ? result.errno : 0;
+      var stdout = result.stdout || '';
+      var stderr = result.stderr || '';
+      diag('exec [axeron]: errno=' + errno + ' len=' + stdout.length, 'ok');
+      setTimeout(function() {
+        try { callback(errno, stdout, stderr); } catch(e) { diag('cb err: ' + e, 'err'); }
+      }, 0);
+      return;
+    } catch(e) {
+      diag('Axeron.exec 异常: ' + e, 'err');
+    }
+  }
+
+  if (typeof ksu !== 'undefined' && typeof ksu.exec === 'function') {
+    var cbName = '__ne_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+    var done = false;
+    window[cbName] = function(errno, stdout, stderr) {
+      if (done) return;
+      done = true;
+      try { delete window[cbName]; } catch(e) {}
+      diag('exec [ksu]: errno=' + errno + ' len=' + (stdout||'').length, 'ok');
+      try { callback(errno, stdout || '', stderr || ''); } catch(e2) { diag('cb err: ' + e2, 'err'); }
+    };
+    try {
+      ksu.exec(cmd, '{}', cbName);
+      setTimeout(function() {
+        if (!done) {
+          done = true;
+          try { delete window[cbName]; } catch(e) {}
+          diag('ksu.exec 超时', 'err');
+          callback(-2, '', 'exec 超时');
+        }
+      }, 10000);
+      return;
+    } catch(e) {
+      try { delete window[cbName]; } catch(e8) {}
+      diag('ksu.exec 异常: ' + e, 'err');
+    }
+  }
+
+  diag('exec 失败: API 不可用', 'err');
+  setTimeout(function() { callback(-1, '', 'API 不可用'); }, 0);
+}
+
+// 修改点 2: MODDIR 探测路径更新为 Network_Enhance
+function initModDir() {
+  diag('开始获取 MODDIR...');
+
+  diag('策略 1: ksu.moduleInfo()...');
+  if (typeof ksu !== 'undefined' && typeof ksu.moduleInfo === 'function') {
+    try {
+      var raw = ksu.moduleInfo();
+      diag('  moduleInfo: ' + String(raw || '').substring(0, 200));
+      var info = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      if (info) {
+        var dir = info.moduleDir || info.module_dir || info.path || '';
+        if (typeof dir === 'object' && dir) {
+          dir = dir.path || dir.absolutePath || dir.toString() || '';
+        }
+        dir = String(dir || '');
+        if (dir && dir !== '[object Object]' && dir.charAt(0) === '/') {
+          MODDIR = dir;
+          diag('✓ MODDIR = ' + MODDIR + ' (moduleInfo)', 'ok');
+          return true;
+        }
+      }
+    } catch(e) {
+      diag('  moduleInfo 异常: ' + e, 'err');
+    }
+  }
+
+  diag('策略 2: Axeron.moduleInfo()...');
+  if (typeof Axeron !== 'undefined' && typeof Axeron.moduleInfo === 'function') {
+    try {
+      var raw2 = Axeron.moduleInfo();
+      diag('  Axeron.moduleInfo: ' + String(raw2 || '').substring(0, 200));
+      var info2 = (typeof raw2 === 'string') ? JSON.parse(raw2) : raw2;
+      if (info2) {
+        var dir2 = String(info2.moduleDir || info2.path || info2.absolutePath || '');
+        if (dir2 && dir2.charAt(0) === '/') {
+          MODDIR = dir2;
+          diag('✓ MODDIR = ' + MODDIR + ' (Axeron.moduleInfo)', 'ok');
+          return true;
+        }
+      }
+    } catch(e) {
+      diag('  Axeron.moduleInfo 异常: ' + e, 'err');
+    }
+  }
+
+  diag('策略 3: exec 探测路径...');
+
+  var r0 = execSync('pwd');
+  if (r0 && r0.stdout) {
+    var pwdDir = r0.stdout.trim();
+    diag('  pwd = ' + pwdDir);
+    var r0b = execSync('test -f ' + pwdDir + '/module.prop && echo FOUND');
+    if (r0b && r0b.stdout && r0b.stdout.indexOf('FOUND') >= 0) {
+      MODDIR = String(pwdDir);
+      diag('✓ MODDIR = ' + MODDIR + ' (pwd)', 'ok');
+      return true;
+    }
+  }
+
+  var candidates = [
+    '/data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance',
+    '/data/user_de/0/android/axeron/plugins/Network_Enhance',
+    '/data/adb/modules/Network_Enhance',
+    '/data/data/com.android.shell/axeron/plugins/Network_Enhance'
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    var d = candidates[i];
+    var r = execSync('test -f ' + d + '/module.prop && echo FOUND');
+    diag('  探测 ' + d + ': ' + (r ? (r.stdout || '').trim() : 'exec 失败'));
+    if (r && r.stdout && String(r.stdout).indexOf('FOUND') >= 0) {
+      MODDIR = String(d);
+      diag('✓ MODDIR = ' + MODDIR + ' (探测命中)', 'ok');
+      return true;
+    }
+  }
+
+  diag('策略 4: ls 扫描 plugins 目录...');
+  var pluginsDirs = [
+    '/data/user_de/0/com.android.shell/axeron/plugins/',
+    '/data/user_de/0/android/axeron/plugins/',
+    '/data/adb/modules/'
+  ];
+  for (var j = 0; j < pluginsDirs.length; j++) {
+    var r2 = execSync('ls ' + pluginsDirs[j] + ' 2>/dev/null');
+    if (r2 && r2.stdout) {
+      diag('  ' + pluginsDirs[j] + ': ' + r2.stdout.substring(0, 200));
+      var lines = String(r2.stdout).split('\n');
+      for (var k = 0; k < lines.length; k++) {
+        var name = lines[k].trim();
+        var nameLower = name.toLowerCase();
+        if (name && (nameLower.indexOf('network') >= 0 || nameLower.indexOf('enhance') >= 0)) {
+          var d2 = pluginsDirs[j] + name;
+          MODDIR = String(d2);
+          diag('✓ MODDIR = ' + MODDIR + ' (ls 命中)', 'ok');
+          return true;
+        }
+      }
+    }
+  }
+
+  MODDIR = String('/data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance');
+  diag('⚠ 所有策略失败，使用默认 MODDIR = ' + MODDIR, 'err');
+  setApiBanner('warn', '⚠ MODDIR 探测失败，使用默认路径');
+  return false;
+}
+
+function testExec() {
+  diag('=== 测试 exec ===');
+  var apiType = detectApi();
+  diag('API 类型: ' + apiType);
+
+  if (apiType === 'axeron') {
+    try {
+      var rawJson = Axeron.exec('echo hello_exec_test', '{}');
+      diag('Axeron.exec 返回: ' + String(rawJson).substring(0, 200));
+      var result = JSON.parse(rawJson);
+      var stdout = result.stdout || '';
+      if (stdout.indexOf('hello_exec_test') >= 0) {
+        diag('✓ exec 测试成功', 'ok');
+        showAlert('✓ exec 测试成功\n\nstdout: ' + stdout);
+      } else {
+        diag('✗ exec 返回异常', 'err');
+        showAlert('✗ exec 返回异常\n\n' + rawJson);
+      }
+    } catch(e) {
+      diag('Axeron.exec 异常: ' + e, 'err');
+      showAlert('Axeron.exec 异常\n\n' + e);
+    }
+  } else if (apiType === 'ksu-async') {
+    exec('echo hello_exec_test', function(errno, stdout, stderr) {
+      if ((errno === 0 || errno === '0') && stdout.indexOf('hello_exec_test') >= 0) {
+        diag('✓ exec 测试成功', 'ok');
+        showAlert('✓ exec 测试成功 (ksu)\n\nstdout: ' + stdout);
+      } else {
+        diag('✗ exec 返回异常', 'err');
+        showAlert('✗ exec 返回异常\nerrno=' + errno + '\nstdout: ' + stdout);
+      }
+    });
+  } else {
+    showAlert('✗ 无可用 API\ntypeof Axeron=' + (typeof Axeron) + '\ntypeof ksu=' + (typeof ksu));
+  }
+}
+
+function runDiagnostics() {
+  diagLog = [];
+  diag('=== 开始完整诊断 ===');
+  diag('typeof Axeron: ' + (typeof Axeron));
+  diag('typeof ksu: ' + (typeof ksu));
+  if (typeof Axeron !== 'undefined') diag('Axeron.exec: ' + (typeof Axeron.exec));
+  if (typeof ksu !== 'undefined') diag('ksu.exec: ' + (typeof ksu.exec));
+  diag('navigator.userAgent: ' + navigator.userAgent.substring(0, 100));
+
+  apiRetryCount = 0;
+  waitApiReady(function(apiOk) {
+    if (!apiOk) {
+      diag('API 探测失败', 'err');
+      return;
+    }
+    initModDir();
+
+    diag('测试 exec (echo hello)...');
+    exec('echo hello', function(errno, stdout) {
+      diag('exec 测试: errno=' + errno + ' stdout="' + stdout.trim() + '"',
+           (errno === 0 || errno === '0') ? 'ok' : 'err');
+    });
+
+    diag('测试 settings get...');
+    exec('settings get global wifi_scan_throttle_enabled', function(errno, stdout) {
+      diag('settings 测试: stdout="' + stdout.trim() + '"', 'ok');
+    });
+
+    if (MODDIR) {
+      diag('测试模块脚本存在性...');
+      exec('test -f ' + MODDIR + '/module.prop && echo EXISTS || echo MISSING', function(errno, stdout) {
+        diag('module.prop: ' + stdout.trim(), stdout.indexOf('EXISTS') >= 0 ? 'ok' : 'err');
+      });
+      exec('test -f ' + MODDIR + '/scripts/network_info.sh && echo EXISTS || echo MISSING', function(errno, stdout) {
+        diag('network_info.sh: ' + stdout.trim(), stdout.indexOf('EXISTS') >= 0 ? 'ok' : 'err');
+      });
+      exec('pwd', function(errno, stdout) {
+        diag('pwd = ' + stdout.trim());
+      });
+    }
+
+    diag('=== 诊断完成 ===');
+  });
+}
+
+function toast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show';
+  setTimeout(function() { el.className = 'toast'; }, 2500);
+}
+
+function showAlert(content) {
+  document.getElementById('alert-content').textContent = content;
+  document.getElementById('alert-box').className = 'alert-box show';
+}
+
+function hideAlert() {
+  document.getElementById('alert-box').className = 'alert-box';
+}
+
+function runCmd(cmd, name, after) {
+  toast(name + ' 执行中...');
+  diag('runCmd: ' + name + ' | ' + cmd.substring(0, 80));
+  exec(cmd, function(errno, stdout, stderr) {
+    var ok = (errno === 0 || errno === '0' || errno === 0);
+    if (ok) {
+      toast(name + ' 完成');
+      if (stdout && stdout.trim()) {
+        showAlert(name + ' 输出:\n\n' + stdout.substring(0, 3000));
+      }
+    } else {
+      toast(name + ' 失败 (' + errno + ')');
+      showAlert(name + ' 失败 (errno=' + errno + '):\n\nstdout: ' + (stdout || '') + '\n\nstderr: ' + (stderr || ''));
+    }
+    if (typeof after === 'function') after();
+    setTimeout(refreshAll, 500);
+  });
+}
+
+// 修改点 2: 日志路径更新为 network_enhance
+function clearLog() {
+  if (!confirm('确定清空日志?')) return;
+  runCmd('rm -f /data/local/tmp/network_enhance.log', '清空日志', loadLog);
+}
+
+function confirmReset() {
+  if (!confirm('确定一键还原所有设置?\n\n将关闭 Data Saver + 恢复 5G + 还原 WiFi/DNS 设置')) return;
+  runCmd('sh ' + MODDIR + '/action.sh 27', '一键还原');
+}
+
+function parseJSON(text) {
+  try { return JSON.parse(text); } catch(e) { return null; }
+}
+
+// 修改点 3: loadNetworkInfo 增强 5G 信号字段解析
+function loadNetworkInfo() {
+  if (!MODDIR || !API_READY) return;
+  exec('sh ' + MODDIR + '/scripts/network_info.sh json', function(errno, stdout) {
+    var data = parseJSON(stdout);
+
+    if (!data) {
+      document.getElementById('net-badge').textContent = '解析失败';
+      document.getElementById('net-badge').className = 'badge err';
+      diag('network_info json 解析失败: errno=' + errno + ' stdout=' + (stdout||'').substring(0, 200), 'err');
+      return;
+    }
+
+    document.getElementById('net-type').textContent = data.net_type || '-';
+    var badge = document.getElementById('net-badge');
+    // 修改点: 网络类型 5G/4G/3G/2G/wifi/mobile/dual/none 映射
+    if (data.net_type === 'wifi') { badge.textContent = 'WiFi'; badge.className = 'badge ok'; }
+    else if (data.net_type === '5G') { badge.textContent = '5G'; badge.className = 'badge ok'; }
+    else if (data.net_type === '4G') { badge.textContent = '4G'; badge.className = 'badge ok'; }
+    else if (data.net_type === '3G') { badge.textContent = '3G'; badge.className = 'badge warn'; }
+    else if (data.net_type === '2G') { badge.textContent = '2G'; badge.className = 'badge err'; }
+    else if (data.net_type === 'mobile') { badge.textContent = '移动数据'; badge.className = 'badge ok'; }
+    else if (data.net_type === 'dual') { badge.textContent = '双通道'; badge.className = 'badge ok'; }
+    else { badge.textContent = '无网络'; badge.className = 'badge err'; }
+
+    // 修改点: 新增网络制式 (preferred_network_mode) 显示
+    var pnmEl = document.getElementById('mobile-rat');
+    if (pnmEl) {
+      var pnm = data.preferred_network_mode || '-';
+      var pnmDesc = pnm;
+      if (pnm === '11') pnmDesc = 'LTE Only (11)';
+      else if (pnm === '9') pnmDesc = 'LTE/3G (9)';
+      else if (pnm === '23') pnmDesc = 'NR Only (23)';
+      else if (pnm === '26') pnmDesc = 'NR/LTE/GSM/WCDMA (26)';
+      else if (pnm === '27') pnmDesc = 'NR/LTE/CDMA/EvDo/GSM/WCDMA (27)';
+      else if (pnm === '32') pnmDesc = 'NR/LTE/TDSCDMA/GSM/WCDMA (32)';
+      else if (pnm === '33') pnmDesc = '全制式5G (33)';
+      pnmEl.textContent = pnmDesc;
+    }
+
+    var wifi = data.wifi || {};
+    var mobile = data.mobile || {};
+
+    document.getElementById('wifi-ssid').textContent = wifi.ssid || '-';
+    var rssiEl = document.getElementById('wifi-rssi');
+    var rssiVal = wifi.rssi || '?';
+    rssiEl.textContent = rssiVal + ' dBm';
+    rssiEl.className = 'stat-value ' + rssiClass(rssiVal);
+    document.getElementById('wifi-speed').textContent = (wifi.link_speed || '?') + ' Mbps';
+    document.getElementById('wifi-freq').textContent = wifi.frequency || '?';
+
+    document.getElementById('mobile-carrier').textContent = mobile.carrier || '-';
+    // mobile-rat 已被 preferred_network_mode 占用, 这里不再覆盖
+    var lvlEl = document.getElementById('mobile-level');
+    var lvlVal = mobile.level || '?';
+    lvlEl.textContent = lvlVal + '/4';
+    lvlEl.className = 'stat-value ' + levelClass(lvlVal);
+    var dbmEl = document.getElementById('mobile-dbm');
+    var dbmVal = mobile.dbm || '?';
+    dbmEl.textContent = dbmVal + ' dBm';
+    dbmEl.className = 'stat-value ' + dbmClass(dbmVal);
+
+    var pingEl = document.getElementById('net-ping');
+    var pingVal = data.ping_ms || '?';
+    // 修改点: ping 显示兼容 timeout / 2000
+    if (pingVal === 'timeout') {
+      pingEl.textContent = 'timeout (不通)';
+      pingEl.className = 'stat-value bad';
+    } else if (pingVal === '2000') {
+      pingEl.textContent = '2000 ms (较差)';
+      pingEl.className = 'stat-value warn';
+    } else {
+      pingEl.textContent = pingVal + ' ms';
+      pingEl.className = 'stat-value ' + pingClass(pingVal);
+    }
+
+    // 5G 信号质量字段
+    var nr = data.nr || {};
+    var nrBadge = document.getElementById('nr-badge');
+    var rsrpEl = document.getElementById('nr-rsrp');
+    var rsrqEl = document.getElementById('nr-rsrq');
+    var sinrEl = document.getElementById('nr-sinr');
+    var fake5gEl = document.getElementById('fake5g-status');
+    var fake5gWarn = document.getElementById('fake5g-warn');
+
+    var rsrpVal = nr.rsrp || '无';
+    var sinrVal = nr.sinr || '无';
+    rsrpEl.textContent = rsrpVal;
+    rsrqEl.textContent = nr.rsrq || '无';
+    sinrEl.textContent = sinrVal;
+    rsrpEl.className = 'stat-value ' + rsrpClass(rsrpVal);
+    sinrEl.className = 'stat-value ' + sinrClass(sinrVal);
+
+    // 修改点: fake_5g 改为字符串 '1' 判断 (兼容 '1'/'true'/1/true)
+    var isFake5g = (nr.fake_5g === '1' || nr.fake_5g === 1 || nr.fake_5g === true || nr.fake_5g === 'true');
+    var isFake5gActive = (nr.fake_5g_active === '1' || nr.fake_5g_active === 1 || nr.fake_5g_active === 'true');
+    if (isFake5g || isFake5gActive) {
+      fake5gEl.textContent = '⚠ 假满格';
+      fake5gEl.className = 'stat-value bad';
+      nrBadge.textContent = '假满格';
+      nrBadge.className = 'badge err';
+      fake5gWarn.className = 'fake5g-warn show';
+    } else {
+      fake5gEl.textContent = 'OK 正常';
+      fake5gEl.className = 'stat-value good';
+      nrBadge.textContent = '正常';
+      nrBadge.className = 'badge ok';
+      fake5gWarn.className = 'fake5g-warn';
+    }
+
+    // 修改点: 同步驱动调度器区块的 5G降级状态 (mon-fake5g)
+    // 解决 loadMonitorStatus 依赖 state 文件导致空白的问题
+    // 即使调度器未运行, 也能从 JSON 的 fake_5g_active 字段获取状态
+    var monFake5gEl = document.getElementById('mon-fake5g');
+    if (monFake5gEl) {
+      if (isFake5gActive) {
+        monFake5gEl.textContent = '⚠ 已降级4G';
+        monFake5gEl.className = 'stat-value small warn';
+      } else if (isFake5g) {
+        monFake5gEl.textContent = '⚠ 检测到假满格';
+        monFake5gEl.className = 'stat-value small warn';
+      } else {
+        monFake5gEl.textContent = '正常';
+        monFake5gEl.className = 'stat-value small good';
+      }
+    }
+  });
+}
+
+// 修改点 3: 新增 5G 信号等级判定
+function rsrpClass(rsrp) {
+  if (rsrp === '无' || rsrp === '?' || rsrp === '') return '';
+  var n = parseInt(rsrp); if (isNaN(n)) return '';
+  if (n > -85) return 'good'; if (n > -110) return 'warn'; return 'bad';
+}
+function sinrClass(sinr) {
+  if (sinr === '无' || sinr === '?' || sinr === '') return '';
+  var n = parseInt(sinr); if (isNaN(n)) return '';
+  if (n >= 10) return 'good'; if (n >= 0) return 'warn'; return 'bad';
+}
+
+function rssiClass(rssi) {
+  if (rssi === '?' || rssi === '') return '';
+  var n = parseInt(rssi); if (isNaN(n)) return '';
+  if (n > -60) return 'good'; if (n > -75) return 'warn'; return 'bad';
+}
+function levelClass(lvl) {
+  if (lvl === '?' || lvl === '') return '';
+  var n = parseInt(lvl); if (isNaN(n)) return '';
+  if (n >= 3) return 'good'; if (n >= 2) return 'warn'; return 'bad';
+}
+function dbmClass(dbm) {
+  if (dbm === '?' || dbm === '') return '';
+  var n = parseInt(dbm); if (isNaN(n)) return '';
+  if (n > -85) return 'good'; if (n > -105) return 'warn'; return 'bad';
+}
+function pingClass(ms) {
+  if (ms === '?' || ms === '') return '';
+  var n = parseInt(ms); if (isNaN(n)) return '';
+  if (n < 50) return 'good'; if (n < 150) return 'warn'; return 'bad';
+}
+
+// 修改点 2: 状态文件路径更新 + 修改点 3: 新增 5G 降级状态显示
+function loadMonitorStatus() {
+  if (!MODDIR || !API_READY) return;
+
+  var pidFile = '/data/local/tmp/network_enhance_monitor.pid';
+  var stateFile = '/data/local/tmp/network_enhance_monitor.state';
+
+  exec('cat ' + pidFile + ' 2>/dev/null', function(errno, pidStr) {
+    var pid = (pidStr || '').trim();
+    var badge = document.getElementById('monitor-badge');
+    var levelEl = document.getElementById('mon-level');
+    var fake5gEl = document.getElementById('mon-fake5g');
+
+    if (!pid || !/^[0-9]+$/.test(pid)) {
+      badge.textContent = '未运行';
+      badge.className = 'badge err';
+      levelEl.textContent = '-';
+      fake5gEl.textContent = '-';
+      return;
+    }
+
+    exec('kill -0 ' + pid + ' 2>/dev/null && echo ALIVE || echo DEAD', function(e2, out2) {
+      var alive = (out2 || '').indexOf('ALIVE') >= 0;
+
+      if (!alive) {
+        badge.textContent = '未运行';
+        badge.className = 'badge err';
+        levelEl.textContent = '-';
+        fake5gEl.textContent = '-';
+        return;
+      }
+
+      badge.textContent = '运行中';
+      badge.className = 'badge ok';
+
+      exec('cat ' + stateFile + ' 2>/dev/null', function(e3, stateText) {
+        var text = stateText || '';
+
+        if (text.indexOf('PID=') < 0) {
+          levelEl.textContent = '启动中';
+          fake5gEl.textContent = '-';
+          return;
+        }
+
+        var lines = text.split('\n');
+        var fields = {};
+        for (var i = 0; i < lines.length; i++) {
+          var idx = lines[i].indexOf('=');
+          if (idx > 0) {
+            fields[lines[i].substring(0, idx)] = lines[i].substring(idx + 1);
+          }
+        }
+
+        if (fields.LEVEL && fields.LEVEL !== 'init') {
+          levelEl.textContent = fields.LEVEL;
+        } else if (fields.LEVEL === 'init') {
+          levelEl.textContent = '初始化中';
+        } else {
+          levelEl.textContent = '运行中';
+        }
+
+        // 修改点 3: 5G 降级状态
+        if (fields.FAKE_5G_ACTIVE === '1') {
+          fake5gEl.textContent = '⚠ 已降级4G';
+          fake5gEl.className = 'stat-value small warn';
+        } else {
+          fake5gEl.textContent = '正常';
+          fake5gEl.className = 'stat-value small good';
+        }
+      });
+    });
+  });
+}
+
+function loadDnsStatus() {
+  if (!MODDIR || !API_READY) return;
+  exec('sh ' + MODDIR + '/scripts/dns.sh status', function(errno, stdout) {
+    var text = stdout || '';
+    var modeMatch = text.match(/模式:\s*(\S+)/);
+    var specMatch = text.match(/主机:\s*(\S+)/);
+    document.getElementById('dns-mode').textContent = modeMatch ? modeMatch[1] : '-';
+    document.getElementById('dns-spec').textContent = specMatch ? specMatch[1] : '-';
+    var mode = modeMatch ? modeMatch[1] : '-';
+    var badge = document.getElementById('dns-badge');
+    if (mode === 'hostname') { badge.textContent = 'DoT'; badge.className = 'badge ok'; }
+    else if (mode === 'off') { badge.textContent = '关闭'; badge.className = 'badge err'; }
+    else { badge.textContent = mode; badge.className = 'badge'; }
+  });
+}
+
+// 修改点 2: weaknet 标志路径更新
+function loadWeaknetStatus() {
+  if (!API_READY) return;
+  exec('test -f /data/local/tmp/network_enhance_weaknet_active && echo ACTIVE || echo STANDARD', function(errno, stdout) {
+    var text = (stdout || '').trim();
+    var badge = document.getElementById('weaknet-badge');
+    if (text === 'ACTIVE') { badge.textContent = 'weaknet激活'; badge.className = 'badge warn'; }
+    else { badge.textContent = '标准'; badge.className = 'badge'; }
+  });
+}
+
+// 修改点 2: 日志路径更新
+function loadLog() {
+  if (!API_READY) return;
+  exec('tail -50 /data/local/tmp/network_enhance.log 2>/dev/null || echo "(日志不存在)"', function(errno, stdout) {
+    var text = (stdout || '').trim() || '(空)';
+    var html = text.split('\n').map(function(line) {
+      var cls = '';
+      if (/\[WARN\]|\[FAIL\]|\[warn\]/.test(line)) cls = 'log-warn';
+      else if (/\[ERR\]|\[ERROR\]/.test(line)) cls = 'log-err';
+      return '<div class="' + cls + '">' + escapeHtml(line) + '</div>';
+    }).join('');
+    document.getElementById('log-view').innerHTML = html;
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function loadEnv() {
+  if (!API_READY) {
+    document.getElementById('env-info').textContent = 'API 未就绪';
+    return;
+  }
+  exec('getprop ro.product.brand; getprop ro.product.model; getprop ro.build.version.release', function(errno, stdout) {
+    var lines = (stdout || '').split('\n').filter(function(l) { return l.trim(); });
+    var brand = (lines[0] || '?').trim();
+    var model = (lines[1] || '?').trim();
+    var ver = (lines[2] || '?').trim();
+    document.getElementById('env-info').textContent = brand + ' ' + model + ' · Android ' + ver;
+  });
+}
+
+function refreshAll() {
+  if (!API_READY || !MODDIR) {
+    diag('refreshAll 跳过: API=' + API_READY + ' MODDIR=' + MODDIR, 'err');
+    return;
+  }
+  loadNetworkInfo();
+  loadMonitorStatus();
+  loadDnsStatus();
+  loadWeaknetStatus();
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  diag('DOM 加载完成，开始初始化...');
+
+  waitApiReady(function(apiOk) {
+    if (!apiOk) {
+      diag('API 不可用，WebUI 功能受限', 'err');
+      setApiBanner('err', '✗ WebUI API 不可用。请：1. 重启 AxManager；2. 检查 WebView');
+      return;
+    }
+
+    initModDir();
+    loadEnv();
+
+    if (MODDIR) {
+      refreshAll();
+    } else {
+      diag('MODDIR 未获取到', 'err');
+      setApiBanner('warn', '⚠ MODDIR 探测失败，点击"重新诊断"');
+    }
+
+    setInterval(loadNetworkInfo, 30000);
+    setInterval(loadMonitorStatus, 60000);
+    setInterval(loadWeaknetStatus, 60000);
+  });
+});
+</script>
+
+</body>
+</html>

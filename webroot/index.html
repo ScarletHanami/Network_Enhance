@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>网络增强 Network_Enhance</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -235,6 +235,11 @@
   </details>
 
   <div class="footer">网络增强 v1.1.4 · MIT License · AxManager 免Root · 5G假满格自救版</div>
+  <div class="exec-indicator" id="exec-indicator">
+    <div class="exec-bar"></div>
+  </div>
+  <div class="exec-label" id="exec-label"><span class="exec-label-spinner"></span><span id="exec-label-text">执行中</span>
+  </div>
   <div class="toast" id="toast"></div>
   <div class="alert-box" id="alert-box"><span class="close" onclick="hideAlert()">×</span>
     <div id="alert-content"></div>
@@ -255,17 +260,16 @@
 
     // ======================================================================
     // 全局异步防假卡死框架
-    //   - 请求队列: execQueue 确保同一时刻最多 1 个 exec 在运行
     //   - 去重: pendingLoads 跟踪正在执行的请求，避免重复提交
     //   - 节流: 按钮操作 500ms 冷却，refreshAll 2s 冷却
     //   - 错误隔离: 每个异步操作独立 try/catch，不互相拖垮
     // ======================================================================
-    var execQueue = [];
-    var execRunning = false;
     var pendingLoads = {};          // key → true 表示该请求正在执行
     var pendingLoadTimers = {};    // key → 延迟执行的 timer
     var lastBtnClick = 0;          // 按钮节流时间戳
     var lastRefreshAll = 0;        // refreshAll 节流时间戳
+    var cmdRunning = false;        // 异步执行互斥锁：true 表示有操作正在执行
+    var cmdRunningName = '';       // 当前正在执行的操作名
     var BTN_THROTTLE_MS = 500;
     var REFRESH_THROTTLE_MS = 2000;
 
@@ -283,40 +287,19 @@
       console.log('[diag]', msg);
     }
 
-    // 全局 exec 调度器 — 确保 exec 串行执行，避免并发卡死
-    function runNextExec() {
-      if (execRunning || execQueue.length === 0) return;
-      execRunning = true;
-      var item = execQueue.shift();
-      // 检查去重: 如果该请求已在执行中，跳过
-      if (item._key && pendingLoads[item._key]) {
-        execRunning = false;
-        runNextExec();
-        return;
-      }
-      if (item._key) pendingLoads[item._key] = true;
-      item._fn(function () {
-        if (item._key) delete pendingLoads[item._key];
-        execRunning = false;
-        // 用 setTimeout 避免微任务堆积
-        setTimeout(runNextExec, 0);
-      });
-    }
-
-    function enqueueExec(key, fn) {
-      execQueue.push({ _key: key || null, _fn: fn });
-      if (!execRunning) runNextExec();
-    }
-
     // 带去重的延迟加载 — 同一 key 在冷却期内不会重复提交
     // 用于 setInterval 中的轮询请求，避免旧请求堆积
+    // 直接执行 fn，不再经过队列（exec 已是同步调用）
     function throttledLoad(key, delayMs, fn) {
       if (pendingLoads[key]) return;           // 正在执行中，跳过
       if (pendingLoadTimers[key]) return;      // 已有定时器，跳过
       pendingLoadTimers[key] = setTimeout(function () {
         delete pendingLoadTimers[key];
         if (pendingLoads[key]) return;         // 双重检查
-        enqueueExec(key, fn);
+        pendingLoads[key] = true;
+        fn(function () {
+          delete pendingLoads[key];
+        });
       }, delayMs);
     }
 
@@ -380,63 +363,57 @@
     }
 
     function exec(cmd, callback) {
-      enqueueExec('exec:' + cmd.substring(0, 40), function (done) {
-        diag('exec: ' + cmd.substring(0, 100));
-        try {
-          if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
-            try {
-              var json = Axeron.exec(cmd, '{}');
-              var result = JSON.parse(json);
-              var errno = (result.errno !== undefined) ? result.errno : 0;
-              var stdout = result.stdout || '';
-              var stderr = result.stderr || '';
-              diag('exec [axeron]: errno=' + errno + ' len=' + stdout.length, 'ok');
-              done();
-              try { callback(errno, stdout, stderr); } catch (e) { diag('cb err: ' + e, 'err'); }
-              return;
-            } catch (e) {
-              diag('Axeron.exec 异常: ' + e, 'err');
-            }
+      diag('exec: ' + cmd.substring(0, 100));
+      try {
+        if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
+          try {
+            var json = Axeron.exec(cmd, '{}');
+            var result = JSON.parse(json);
+            var errno = (result.errno !== undefined) ? result.errno : 0;
+            var stdout = result.stdout || '';
+            var stderr = result.stderr || '';
+            diag('exec [axeron]: errno=' + errno + ' len=' + stdout.length, 'ok');
+            try { callback(errno, stdout, stderr); } catch (e) { diag('cb err: ' + e, 'err'); }
+            return;
+          } catch (e) {
+            diag('Axeron.exec 异常: ' + e, 'err');
           }
-
-          if (typeof ksu !== 'undefined' && typeof ksu.exec === 'function') {
-            var cbName = '__ne_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
-            var ksuDone = false;
-            window[cbName] = function (errno, stdout, stderr) {
-              if (ksuDone) return;
-              ksuDone = true;
-              try { delete window[cbName]; } catch (e) { }
-              diag('exec [ksu]: errno=' + errno + ' len=' + (stdout || '').length, 'ok');
-              done();
-              try { callback(errno, stdout || '', stderr || ''); } catch (e2) { diag('cb err: ' + e2, 'err'); }
-            };
-            try {
-              ksu.exec(cmd, '{}', cbName);
-              setTimeout(function () {
-                if (!ksuDone) {
-                  ksuDone = true;
-                  try { delete window[cbName]; } catch (e) { }
-                  diag('ksu.exec 超时', 'err');
-                  done();
-                  callback(-2, '', 'exec 超时');
-                }
-              }, 10000);
-              return;
-            } catch (e) {
-              try { delete window[cbName]; } catch (e8) { }
-              diag('ksu.exec 异常: ' + e, 'err');
-            }
-          }
-
-          diag('exec 失败: API 不可用', 'err');
-          done();
-          callback(-1, '', 'API 不可用');
-        } catch (e) {
-          done();
-          diag('exec 异常: ' + e, 'err');
-          callback(-1, '', 'exec 异常');
         }
-      });
+
+        if (typeof ksu !== 'undefined' && typeof ksu.exec === 'function') {
+          var cbName = '__ne_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+          var ksuDone = false;
+          window[cbName] = function (errno, stdout, stderr) {
+            if (ksuDone) return;
+            ksuDone = true;
+            try { delete window[cbName]; } catch (e) { }
+            diag('exec [ksu]: errno=' + errno + ' len=' + (stdout || '').length, 'ok');
+            try { callback(errno, stdout || '', stderr || ''); } catch (e2) { diag('cb err: ' + e2, 'err'); }
+          };
+          try {
+            ksu.exec(cmd, '{}', cbName);
+            setTimeout(function () {
+              if (!ksuDone) {
+                ksuDone = true;
+                try { delete window[cbName]; } catch (e) { }
+                diag('ksu.exec 超时', 'err');
+                callback(-2, '', 'exec 超时');
+              }
+            }, 10000);
+            return;
+          } catch (e) {
+            ksuDone = true;
+            try { delete window[cbName]; } catch (e8) { }
+            diag('ksu.exec 异常: ' + e, 'err');
+          }
+        }
+
+        diag('exec 失败: API 不可用', 'err');
+        callback(-1, '', 'API 不可用');
+      } catch (e) {
+        diag('exec 异常: ' + e, 'err');
+        callback(-1, '', 'exec 异常');
+      }
     }
 
     function initModDir() {
@@ -627,23 +604,55 @@
       });
     }
 
-    function toast(msg) {
+    function showExecIndicator(name) {
+      // 取消任何挂起的隐藏定时器
+      if (showExecIndicator._hideTimer) { clearTimeout(showExecIndicator._hideTimer); showExecIndicator._hideTimer = null; }
+      var bar = document.getElementById('exec-indicator');
+      var label = document.getElementById('exec-label');
+      var txt = document.getElementById('exec-label-text');
+      if (txt) txt.textContent = (name || '执行中');
+      if (bar) bar.className = 'exec-indicator show';
+      if (label) label.className = 'exec-label show';
+    }
+
+    function hideExecIndicator() {
+      var bar = document.getElementById('exec-indicator');
+      var label = document.getElementById('exec-label');
+      if (bar) bar.className = 'exec-indicator';
+      if (label) label.className = 'exec-label';
+    }
+
+    function toast(msg, duration) {
       var el = document.getElementById('toast');
       el.textContent = msg;
       el.className = 'toast show';
-      setTimeout(function () { el.className = 'toast'; }, 2500);
+      // 清除之前的定时器，避免旧 toast 提前关闭新 toast
+      if (toast._timer) { clearTimeout(toast._timer); toast._timer = null; }
+      toast._timer = setTimeout(function () { el.className = 'toast'; toast._timer = null; }, duration || 3000);
     }
 
-    function showAlert(content) {
+    function showAlert(content, duration) {
       document.getElementById('alert-content').textContent = content;
       document.getElementById('alert-box').className = 'alert-box show';
+      // 自动关闭：默认 3 秒，传 0 则不自动关闭
+      if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
+      var d = (duration === undefined) ? 3000 : duration;
+      if (d > 0) {
+        showAlert._timer = setTimeout(hideAlert, d);
+      }
     }
 
     function hideAlert() {
+      if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
       document.getElementById('alert-box').className = 'alert-box';
     }
 
     function runCmd(cmd, name, after) {
+      // 互斥锁：不支持同时执行两个操作
+      if (cmdRunning) {
+        toast('正在执行 ' + cmdRunningName + '，请等待');
+        return;
+      }
       // 按钮节流防连点
       var now = Date.now();
       if (now - lastBtnClick < BTN_THROTTLE_MS) {
@@ -651,22 +660,42 @@
         return;
       }
       lastBtnClick = now;
-      toast(name + ' 执行中...');
+      cmdRunning = true;
+      cmdRunningName = name;
+      showExecIndicator(name);
       diag('runCmd: ' + name + ' | ' + cmd.substring(0, 80));
-      exec(cmd, function (errno, stdout, stderr) {
-        var ok = (errno === 0 || errno === '0' || errno === 0);
-        if (ok) {
-          toast(name + ' 完成');
-          if (stdout && stdout.trim()) {
-            showAlert(name + ' 输出:\n\n' + stdout.substring(0, 3000));
-          }
-        } else {
-          toast(name + ' 失败 (' + errno + ')');
-          showAlert(name + ' 失败 (errno=' + errno + '):\n\nstdout: ' + (stdout || '') + '\n\nstderr: ' + (stderr || ''));
-        }
-        if (typeof after === 'function') after();
-        // 延迟刷新，避免阻塞当前操作
-        setTimeout(function () { throttledLoad('refreshAll', 500, doRefreshAll); }, 500);
+      // 关键：用双 rAF 让出主线程，确保浏览器先绘制指示器再执行同步阻塞的 exec
+      // Axeron.exec 是同步的，若不yield，className 变更会被合并到 exec 之后的同一帧，导致指示器不显示
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          exec(cmd, function (errno, stdout, stderr) {
+            // 完成时立即隐藏指示器，避免与反馈弹窗同时显示
+            hideExecIndicator();
+            try {
+              var ok = (errno === 0 || errno === '0');
+              if (ok) {
+                toast(name + ' 完成');
+                // 仅当有非空输出时延迟弹窗，避免与 toast 重叠观感
+                if (stdout && stdout.trim()) {
+                  setTimeout(function () {
+                    showAlert(name + ' 输出:\n\n' + stdout.substring(0, 3000), 0);
+                  }, 200);
+                }
+              } else {
+                toast(name + ' 失败 (' + errno + ')');
+                setTimeout(function () {
+                  showAlert(name + ' 失败 (errno=' + errno + '):\n\nstdout: ' + (stdout || '') + '\n\nstderr: ' + (stderr || ''), 0);
+                }, 200);
+              }
+              if (typeof after === 'function') after();
+              // 延迟刷新，避免阻塞当前操作
+              setTimeout(function () { throttledLoad('refreshAll', 500, doRefreshAll); }, 500);
+            } finally {
+              cmdRunning = false;
+              cmdRunningName = '';
+            }
+          });
+        });
       });
     }
 
@@ -723,7 +752,7 @@
     // 使用 throttledLoad 防止重复调用堆积
     function loadNetworkInfo() {
       if (!MODDIR || !API_READY) return;
-      throttledLoad('networkInfo', 0, function () {
+      throttledLoad('networkInfo', 0, function (done) {
         exec('sh ' + MODDIR + '/scripts/network_info.sh json', function (errno, stdout) {
           var data = parseJSON(stdout);
 
@@ -731,6 +760,7 @@
             document.getElementById('net-badge').textContent = '解析失败';
             document.getElementById('net-badge').className = 'badge err';
             diag('network_info json 解析失败: errno=' + errno + ' stdout=' + (stdout || '').substring(0, 200), 'err');
+            done();
             return;
           }
 
@@ -746,23 +776,9 @@
           else if (data.net_type === 'dual') { badge.textContent = '双通道'; badge.className = 'badge ok'; }
           else { badge.textContent = '无网络'; badge.className = 'badge err'; }
 
-          // 网络制式 (preferred_network_mode) 显示
-          var pnmEl = document.getElementById('mobile-rat');
-          if (pnmEl) {
-            var pnm = data.preferred_network_mode || '-';
-            var pnmDesc = pnm;
-            if (pnm === '11') pnmDesc = 'LTE Only (11)';
-            else if (pnm === '9') pnmDesc = 'LTE/3G (9)';
-            else if (pnm === '23') pnmDesc = 'NR Only (23)';
-            else if (pnm === '26') pnmDesc = 'NR/LTE/GSM/WCDMA (26)';
-            else if (pnm === '27') pnmDesc = 'NR/LTE/CDMA/EvDo/GSM/WCDMA (27)';
-            else if (pnm === '32') pnmDesc = 'NR/LTE/TDSCDMA/GSM/WCDMA (32)';
-            else if (pnm === '33') pnmDesc = '全制式5G (33)';
-            pnmEl.textContent = pnmDesc;
-          }
-
           var wifi = data.wifi || {};
-          var mobile = data.mobile || {};
+          var mobile1 = data.mobile1 || {};
+          var mobile2 = data.mobile2 || {};
 
           document.getElementById('wifi-ssid').textContent = wifi.ssid || '-';
           var rssiEl = document.getElementById('wifi-rssi');
@@ -772,16 +788,47 @@
           document.getElementById('wifi-speed').textContent = (wifi.link_speed || '?') + ' Mbps';
           document.getElementById('wifi-freq').textContent = wifi.frequency || '?';
 
-          document.getElementById('mobile-carrier').textContent = mobile.carrier || '-';
-          // mobile-rat 已被 preferred_network_mode 占用, 这里不再覆盖
-          var lvlEl = document.getElementById('mobile-level');
-          var lvlVal = mobile.level || '?';
-          lvlEl.textContent = lvlVal + '/4';
-          lvlEl.className = 'stat-value ' + levelClass(lvlVal);
-          var dbmEl = document.getElementById('mobile-dbm');
-          var dbmVal = mobile.dbm || '?';
-          dbmEl.textContent = dbmVal + ' dBm';
-          dbmEl.className = 'stat-value ' + dbmClass(dbmVal);
+          // 卡1
+          document.getElementById('mobile-carrier-1').textContent = mobile1.carrier || '-';
+          document.getElementById('mobile-rat-1').textContent = mobile1.rat || '-';
+          var lvl1El = document.getElementById('mobile-level-1');
+          var lvl1Val = mobile1.level || '?';
+          lvl1El.textContent = lvl1Val + '/4';
+          lvl1El.className = 'stat-value ' + levelClass(lvl1Val);
+          var dbm1El = document.getElementById('mobile-dbm-1');
+          var dbm1Val = mobile1.dbm || '?';
+          dbm1El.textContent = dbm1Val + ' dBm';
+          dbm1El.className = 'stat-value ' + dbmClass(dbm1Val);
+
+          // 卡2
+          var m2Carrier = mobile2.carrier || '';
+          var m2Rat = mobile2.rat || '';
+          var m2Level = mobile2.level || '';
+          var m2Dbm = mobile2.dbm || '';
+          var lvl2El = document.getElementById('mobile-level-2');
+          var dbm2El = document.getElementById('mobile-dbm-2');
+          var rat2El = document.getElementById('mobile-rat-2');
+          // 卡2 存在（运营商有值）但其他字段全空 → 显示"无服务"
+          var m2NoService = (m2Carrier && !m2Rat && !m2Level && !m2Dbm);
+
+          document.getElementById('mobile-carrier-2').textContent = m2Carrier || '-';
+          if (m2NoService) {
+            rat2El.textContent = '无服务';
+            rat2El.className = 'stat-value bad';
+            lvl2El.textContent = '无服务';
+            lvl2El.className = 'stat-value bad';
+            dbm2El.textContent = '无服务';
+            dbm2El.className = 'stat-value bad';
+          } else {
+            rat2El.textContent = m2Rat || '-';
+            rat2El.className = 'stat-value';
+            var lvl2Val = m2Level || '?';
+            lvl2El.textContent = lvl2Val + '/4';
+            lvl2El.className = 'stat-value ' + levelClass(lvl2Val);
+            var dbm2Val = m2Dbm || '?';
+            dbm2El.textContent = dbm2Val + ' dBm';
+            dbm2El.className = 'stat-value ' + dbmClass(dbm2Val);
+          }
 
           var pingEl = document.getElementById('net-ping');
           var pingVal = data.ping_ms || '?';
@@ -847,47 +894,80 @@
               monFake5gEl.className = 'stat-value small good';
             }
           }
+          done();
         });
       });
     }
 
-    // 5G 信号质量等级判定函数
+    // 5G 信号质量等级判定函数（5级分类，依据 3GPP TS 38.133 + Android SignalStrength 标准）
+    // 通用规则: excellent > good > warn > poor > bad
     function rsrpClass(rsrp) {
+      // 3GPP TS 38.133 NR RSRP 阈值: >=-85 优 / -95~-85 良 / -105~-95 中 / -115~-105 差 / <-115 无
       if (rsrp === '无' || rsrp === '?' || rsrp === '') return '';
       var n = parseInt(rsrp); if (isNaN(n)) return '';
-      if (n > -85) return 'good'; if (n > -110) return 'warn'; return 'bad';
+      if (n >= -85) return 'excellent';
+      if (n >= -95) return 'good';
+      if (n >= -105) return 'warn';
+      if (n >= -115) return 'poor';
+      return 'bad';
     }
     function sinrClass(sinr) {
+      // 3GPP SINR 阈值: >=13 优 / 5~13 良 / 0~5 中 / -5~0 差 / <-5 无
       if (sinr === '无' || sinr === '?' || sinr === '') return '';
       var n = parseInt(sinr); if (isNaN(n)) return '';
-      if (n >= 10) return 'good'; if (n >= 0) return 'warn'; return 'bad';
+      if (n >= 13) return 'excellent';
+      if (n >= 5) return 'good';
+      if (n >= 0) return 'warn';
+      if (n >= -5) return 'poor';
+      return 'bad';
     }
 
     function rssiClass(rssi) {
+      // WiFi RSSI 行业共识: >=-50 优 / -65~-50 良 / -75~-65 中 / -85~-75 差 / <-85 无
       if (rssi === '?' || rssi === '') return '';
       var n = parseInt(rssi); if (isNaN(n)) return '';
-      if (n > -60) return 'good'; if (n > -75) return 'warn'; return 'bad';
+      if (n >= -50) return 'excellent';
+      if (n >= -65) return 'good';
+      if (n >= -75) return 'warn';
+      if (n >= -85) return 'poor';
+      return 'bad';
     }
     function levelClass(lvl) {
+      // Android SignalStrength 5级: 0=NONE 1=POOR 2=MODERATE 3=GOOD 4=GREAT
       if (lvl === '?' || lvl === '') return '';
       var n = parseInt(lvl); if (isNaN(n)) return '';
-      if (n >= 3) return 'good'; if (n >= 2) return 'warn'; return 'bad';
+      if (n >= 4) return 'excellent';
+      if (n >= 3) return 'good';
+      if (n >= 2) return 'warn';
+      if (n >= 1) return 'poor';
+      return 'bad';
     }
     function dbmClass(dbm) {
+      // 3GPP TS 36.133 LTE/NR RSRP 阈值（与 rsrpClass 一致）:
+      // >=-85 优 / -95~-85 良 / -105~-95 中 / -115~-105 差 / <-115 无
       if (dbm === '?' || dbm === '') return '';
       var n = parseInt(dbm); if (isNaN(n)) return '';
-      if (n > -85) return 'good'; if (n > -105) return 'warn'; return 'bad';
+      if (n >= -85) return 'excellent';
+      if (n >= -95) return 'good';
+      if (n >= -105) return 'warn';
+      if (n >= -115) return 'poor';
+      return 'bad';
     }
     function pingClass(ms) {
+      // Ping 延迟行业共识: <30 优 / 30~80 良 / 80~150 中 / 150~300 差 / >=300 无
       if (ms === '?' || ms === '') return '';
       var n = parseInt(ms); if (isNaN(n)) return '';
-      if (n < 50) return 'good'; if (n < 150) return 'warn'; return 'bad';
+      if (n < 30) return 'excellent';
+      if (n < 80) return 'good';
+      if (n < 150) return 'warn';
+      if (n < 300) return 'poor';
+      return 'bad';
     }
 
     // 状态文件路径 + 5G 降级状态显示
     function loadMonitorStatus() {
       if (!MODDIR || !API_READY) return;
-      throttledLoad('monitorStatus', 0, function () {
+      throttledLoad('monitorStatus', 0, function (done) {
         var pidFile = '/data/local/tmp/network_enhance_monitor.pid';
         var stateFile = '/data/local/tmp/network_enhance_monitor.state';
 
@@ -902,6 +982,7 @@
             badge.className = 'badge err';
             levelEl.textContent = '-';
             fake5gEl.textContent = '-';
+            done();
             return;
           }
 
@@ -913,6 +994,7 @@
               badge.className = 'badge err';
               levelEl.textContent = '-';
               fake5gEl.textContent = '-';
+              done();
               return;
             }
 
@@ -925,6 +1007,7 @@
               if (text.indexOf('PID=') < 0) {
                 levelEl.textContent = '启动中';
                 fake5gEl.textContent = '-';
+                done();
                 return;
               }
 
@@ -953,6 +1036,7 @@
                 fake5gEl.textContent = '正常';
                 fake5gEl.className = 'stat-value small good';
               }
+              done();
             });
           });
         });
@@ -961,7 +1045,7 @@
 
     function loadDnsStatus() {
       if (!MODDIR || !API_READY) return;
-      throttledLoad('dnsStatus', 500, function () {
+      throttledLoad('dnsStatus', 500, function (done) {
         exec('sh ' + MODDIR + '/scripts/dns.sh status', function (errno, stdout) {
           var text = stdout || '';
           var modeMatch = text.match(/模式:\s*(\S+)/);
@@ -973,6 +1057,7 @@
           if (mode === 'hostname') { badge.textContent = 'DoT'; badge.className = 'badge ok'; }
           else if (mode === 'off') { badge.textContent = '关闭'; badge.className = 'badge err'; }
           else { badge.textContent = mode; badge.className = 'badge'; }
+          done();
         });
       });
     }
@@ -980,12 +1065,13 @@
     // weaknet 标志路径
     function loadWeaknetStatus() {
       if (!API_READY) return;
-      throttledLoad('weaknetStatus', 500, function () {
+      throttledLoad('weaknetStatus', 500, function (done) {
         exec('test -f /data/local/tmp/network_enhance_weaknet_active && echo ACTIVE || echo STANDARD', function (errno, stdout) {
           var text = (stdout || '').trim();
           var badge = document.getElementById('weaknet-badge');
           if (text === 'ACTIVE') { badge.textContent = 'weaknet激活'; badge.className = 'badge warn'; }
           else { badge.textContent = '标准'; badge.className = 'badge'; }
+          done();
         });
       });
     }
@@ -993,7 +1079,7 @@
     // 日志路径
     function loadLog() {
       if (!API_READY) return;
-      throttledLoad('logLoad', 0, function () {
+      throttledLoad('logLoad', 0, function (done) {
         exec('tail -50 /data/local/tmp/network_enhance.log 2>/dev/null || echo "(日志不存在)"', function (errno, stdout) {
           var text = (stdout || '').trim() || '(空)';
           var html = text.split('\n').map(function (line) {
@@ -1003,6 +1089,7 @@
             return '<div class="' + cls + '">' + escapeHtml(line) + '</div>';
           }).join('');
           document.getElementById('log-view').innerHTML = html;
+          done();
         });
       });
     }
@@ -1026,15 +1113,17 @@
     }
 
     // 实际刷新逻辑（被 throttledLoad 调度）
-    function doRefreshAll() {
+    function doRefreshAll(done) {
       if (!API_READY || !MODDIR) {
         diag('doRefreshAll 跳过: API=' + API_READY + ' MODDIR=' + MODDIR, 'err');
+        if (done) done();
         return;
       }
       loadNetworkInfo();
       loadMonitorStatus();
       loadDnsStatus();
       loadWeaknetStatus();
+      if (done) done();
     }
 
     function refreshAll() {

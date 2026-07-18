@@ -1,22 +1,11 @@
 #!/system/bin/sh
 # uninstall.sh — 网络增强 v1.0 卸载清理脚本
 #
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 兜底关闭 Data Saver（用户细节 1 核心！）
-#   - cmd netpolicy set restrict-background false
-#   - 防止模块卸载后系统级 Data Saver 残留导致后台应用无法联网
-# ⚠️ 修改点 3: 联动调用 carrier.sh unlock-lte（用户细节 2）
-#   - 恢复网络制式为运营商默认 5G 模式
-#   - 清除 PNM 受限标记
-# ⚠️ 修改点 4: 深度清理所有运行时残留文件（用户细节 3）
-#   - PID/状态/日志/5G备份/PNM受限标记/weaknet激活标志
-# ⚠️ 修改点 5: 杀掉存活的 monitor.sh 后台进程
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 卸载脚本
-#   用户细节 1: Data Saver 绝对还原
-#   用户细节 2: 联动调用 unlock-lte
-#   用户细节 3: 深度清理残留文件
+# 卸载时执行完整清理: 
+#   1. 停止调度器进程, 关闭 Data Saver (防止残留导致后台应用无法联网)
+#   2. 联动 carrier.sh unlock-lte 恢复网络制式为默认 5G 模式
+#   3. 深度清理所有运行时残留文件 (PID/状态/日志/临时文件)
+#   4. 还原 WiFi / 移动网络 / Private DNS 设置
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -68,7 +57,7 @@ _uninstall_log() {
 _uninstall_log "开始卸载清理..."
 
 # ===============================
-# 修改点 5: 停止调度器进程
+# 停止调度器进程
 # ===============================
 # 先停止 monitor.sh 主循环，避免卸载过程中进程仍在运行
 if [ -n "${SE_PID_FILE:-}" ] && [ -f "$SE_PID_FILE" ]; then
@@ -87,10 +76,9 @@ pkill -f "monitor.sh" 2>/dev/null
 sleep 0.5
 
 # ===============================
-# 修改点 2: 兜底关闭 Data Saver（用户细节 1 核心！）
+# 关闭 Data Saver (必须关闭, 防止残留导致后台应用无法联网)
 # ===============================
-# 此开关为系统级，必须确保关闭，否则用户日常后台应用彻底无法联网
-# 即使模块崩溃或异常卸载，也要确保此开关还原
+# 系统级开关, 即使模块异常卸载也要确保还原
 if command -v cmd >/dev/null 2>&1; then
     if cmd netpolicy set restrict-background false 2>/dev/null; then
         _uninstall_log "Data Saver 已关闭 (restrict-background=false)"
@@ -100,7 +88,7 @@ if command -v cmd >/dev/null 2>&1; then
 fi
 
 # ===============================
-# 修改点 3: 联动调用 carrier.sh unlock-lte（用户细节 2）
+# 联动 carrier.sh unlock-lte 恢复网络制式
 # ===============================
 # 恢复网络制式为运营商默认 5G 模式
 # 同时清除 PNM 受限标记
@@ -112,7 +100,7 @@ elif [ -n "${MODPATH:-}" ] && [ -f "$MODPATH/scripts/carrier.sh" ]; then
     _uninstall_log "已调用 carrier.sh unlock-lte 恢复网络制式"
 else
     # 模块目录已移除，手动恢复 PNM
-    # 使用各运营商默认值（S3 修正后的正确值）
+    # 使用各运营商默认值（手动恢复 PNM=26）
     settings put global preferred_network_mode 26 2>/dev/null  # 默认联通兼容
     settings put global preferred_network_mode1 26 2>/dev/null
     settings put global endc_capability 1 2>/dev/null
@@ -176,7 +164,7 @@ settings delete global network_enhance_activated 2>/dev/null
 _uninstall_log "自定义键已清理"
 
 # ===============================
-# 修改点 4: 深度清理所有运行时残留文件（用户细节 3 核心！）
+# 深度清理所有运行时残留文件
 # ===============================
 _uninstall_log "开始深度清理运行时残留文件..."
 

@@ -1,4 +1,4 @@
-# 网络增强 v1.0 (AxManager 免Root 网络优化)
+# 网络增强 Network_Enhance (AxManager 免Root 网络优化)
 
 > 中国大陆网络优化模块 — 严格遵循 AxManager 官方插件协议
 > 作者：寒碑听风 · 协议：MIT
@@ -74,8 +74,8 @@
 - DNS 预热腾讯/网易/米哈游等游戏厂商域名
 - **发送语音副作用通知**告知用户
 
-### 3. 运营商默认值修正（S3 关键修正）
-原模块存在严重的运营商默认值错误，本版本已修正：
+### 3. 运营商默认值修正（AOSP 权威数值表）
+原模块存在严重的运营商默认值错误，本版本已按 AOSP RILConstants.java 修正：
 
 | 运营商 | 旧值（错误） | 新值（修正） | 常量名 | 修正原因 |
 |---|---|---|---|---|
@@ -126,7 +126,7 @@
 
 ```
 Network_Enhance/
-├── module.prop                    # 模块清单（id=Network_Enhance, v1.0, axeronPlugin=10000）
+├── module.prop                    # 模块清单（id=Network_Enhance）
 ├── customize.sh                   # 安装脚本（路径解析6级fallback + 自检bug修复）
 ├── post-fs-data.sh                # BOOT_COMPLETED first sync（静态优化, 不启动调度器）
 ├── service.sh                     # BOOT_COMPLETED late_start（late_verify + 启动调度器）
@@ -158,7 +158,7 @@ Network_Enhance/
 3. 无线调试已启用（Android 11+）
 
 ### 安装步骤
-1. 在 AxManager 中选择 `Network_Enhance_v1.0.zip` 安装
+1. 在 AxManager 中选择 `Network_Enhance_{版本号}.zip` 安装（CI版本为 `Network_Enhance_ci_{时间戳}.zip`）
 2. 重启手机
 3. 重新激活 AxManager（无线调试模式）
 4. 在 AxManager 中点击模块"界面"按钮打开 WebUI

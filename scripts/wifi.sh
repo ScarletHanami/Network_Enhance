@@ -1,11 +1,5 @@
 #!/system/bin/sh
 # wifi.sh — 网络增强 v1.0 WiFi 优化工具
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 保留 S1 v6.3.0 OEM 兼容版逻辑（已通过 oem_compat.sh 过滤）
-# ⚠️ 修改点 3: 状态显示增强（5G 频段识别）
-#
-# 来源: S1 第一步原模块 v6.3.0 WiFi 优化逻辑
 # 用法: sh wifi.sh <apply|status|reset>
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
@@ -36,7 +30,7 @@ _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; 
 unset _se_common _se_find_common
 
 # ----------------------------------------------------------------------
-# 应用 WiFi 优化（保留 S1 v6.3.0 OEM 兼容版逻辑）
+# 应用 WiFi 优化（OEM 兼容性由 oem_compat.sh 过滤）
 # ----------------------------------------------------------------------
 apply_wifi() {
     [ "$ENABLE_WIFI_OPTIMIZE" = "true" ] || {
@@ -91,7 +85,7 @@ apply_wifi() {
 }
 
 # ----------------------------------------------------------------------
-# 状态显示（修改点 3: 增强 5G 频段识别）
+# 状态显示（含 5G 频段识别）
 # ----------------------------------------------------------------------
 show_wifi_status() {
     echo "=== WiFi 设置状态 v${SE_VERSION} ==="
@@ -142,7 +136,7 @@ show_wifi_status() {
         esac
     fi
 
-    # 修改点 3: 频段与链路速率显示
+    # 频段与链路速率显示（Android 14+ 支持）
     if se_is_android_14_plus; then
         echo "  当前频段      : $(cmd wifi status 2>/dev/null | grep -i 'frequency' | head -1 | awk '{print $NF}')"
     fi
@@ -150,7 +144,7 @@ show_wifi_status() {
 }
 
 # ----------------------------------------------------------------------
-# 还原 WiFi 设置（保留 S1）
+# 还原 WiFi 设置
 # ----------------------------------------------------------------------
 reset_wifi() {
     echo "=== 还原 WiFi 设置 ==="

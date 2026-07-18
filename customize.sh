@@ -1,22 +1,10 @@
 #!/system/bin/sh
 # customize.sh — 网络增强 v1.0 安装脚本
 # 本脚本会被 source（不是执行），不能用 exit，要用 abort
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 修复自检误报缺失 bug（用户细节 2）
-#   - 路径解析增强: pwd + AXERONDIR + MODPATH + 已知路径硬探测
-#   - 安装期自检保持轻量, 不执行耗时网络请求
-# ⚠️ 修改点 3: 移除 system.prop 引用（S2 确认免Root不生效）
-# ⚠️ 修改点 4: OEM 预检更新（含 S3 修正后的运营商默认值）
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 安装脚本
-#   S2 第二步: AxManager 安装期环境约束
-#   用户细节 2: 自检 bug 修复 + 轻量化
 
 SKIPUNZIP=0
 
-# v1.0: MODPATH 健壮性校验
+# MODPATH 健壮性校验
 if [ -z "${MODPATH:-}" ] || [ ! -d "$MODPATH" ]; then
     ui_print "  [!] MODPATH 未设置或不存在，尝试兜底解析..."
     if [ -n "${0:-}" ] && echo "$0" | grep -q '/' 2>/dev/null; then
@@ -205,12 +193,12 @@ for _f in config.sh module.prop; do
     fi
 done
 
-# 修改点 3: 确认 system.prop 已移除
+# 确认 system.prop 已移除
 if [ -f "$MODPATH/system.prop" ]; then
-    ui_print "  [WARN] 检测到 system.prop 残留, 删除中..."
+    ui_print "  [WARN] 检测到 system.prop 残留，删除中..."
     rm -f "$MODPATH/system.prop" 2>/dev/null
 fi
-ui_print "  [OK] system.prop 已移除 (persist.* 免Root不生效)"
+ui_print "  [OK] system.prop 已移除（persist.* 免Root不生效）"
 
 ui_print "  [OK] 权限已设置"
 ui_print ""

@@ -1,20 +1,7 @@
 #!/system/bin/sh
 # action.sh — 网络增强 v1.0 用户主动触发脚本
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 菜单扩展（用户细节 1）
-#   - 新增菜单 30: 5G 自检（显示 RSRP/SINR/Ping，判定假满格）
-#   - 新增菜单 31: 锁定 LTE（调用 carrier.sh lock-lte + 语音通知）
-#   - 新增菜单 32: 解锁 LTE（调用 carrier.sh unlock-lte）
-#   - 顺延扩展，不打乱原有 29 项菜单结构
-# ⚠️ 修改点 3: 状态显示新增 5G 信号字段
-# ⚠️ 修改点 4: 保留 S1 v6.3.0 路径解析 6 级 fallback
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 action.sh 框架
-#   S3 第三步: 5G 假满格判定 + carrier.sh lock-lte/unlock-lte
-#   用户约束 3: LTE Only 语音副作用通知
-#   用户细节 1: 菜单 31/32 联动调用
+# 提供状态检测、弱网自救、DNS/WiFi/运营商管理、智能调度器、5G/LTE 制式管理
+# 支持交互菜单（无参数）和 CLI 参数模式（sh action.sh <数字>）
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -76,7 +63,7 @@ print_msg() {
 }
 
 # ===============================
-# 状态检测（修改点 3: 新增 5G 信号字段）
+# 状态检测
 # ===============================
 show_status() {
     print_msg "=========================================="
@@ -184,7 +171,7 @@ show_status() {
 }
 
 # ===============================
-# 操作菜单（修改点 2: 新增菜单 30/31/32）
+# 操作菜单
 # ===============================
 show_menu() {
     print_msg "=========================================="
@@ -287,7 +274,7 @@ case "$choice" in
     3|social)       sh "$MODDIR/scripts/weaknet.sh" social ;;
     4|download)     sh "$MODDIR/scripts/weaknet.sh" download ;;
     5|normal)       sh "$MODDIR/scripts/weaknet.sh" normal ;;
-    # 修改点: 新增代理稳定模式与白名单管理 (v1.1)
+    # 代理稳定模式与白名单管理
     33|vpn-mode)    sh "$MODDIR/scripts/weaknet.sh" vpn ;;
     34|add-vpn-wl)  sh "$MODDIR/scripts/weaknet.sh" add-wl "$2" ;;
     35|rm-vpn-wl)   sh "$MODDIR/scripts/weaknet.sh" rm-wl "$2" ;;
@@ -314,7 +301,7 @@ case "$choice" in
     23) sh "$MODDIR/scripts/monitor.sh" detect ;;
     24) sh "$MODDIR/scripts/monitor.sh" notify "$2" ;;
     25) sh "$MODDIR/scripts/monitor.sh" cancel ;;
-    # 修改点 2: 5G/LTE 制式管理（新增菜单 30/31/32）
+    # 5G/LTE 制式管理
     30|fake5g-check)
         echo "=== 5G 假满格自检 ==="
         echo ""
@@ -344,12 +331,10 @@ case "$choice" in
         fi
         ;;
     31|lock-lte)
-        # 修改点 2 + 用户约束 3: 调用 carrier.sh lock-lte + 语音通知
+        # 锁定 LTE 并发送语音副作用提醒
         echo "=== 手动锁定 LTE Only ==="
         echo ""
         sh "$MODDIR/scripts/carrier.sh" lock-lte
-        # 调用 weaknet.sh 中的语音副作用通知函数（用户约束 3）
-        # weaknet.sh 中已定义 notify_lte_only_voice_warning, 通过 source 调用
         if [ -f "$MODDIR/scripts/weaknet.sh" ]; then
             # 直接发送通知（避免 source 整个 weaknet.sh）
             se_notify "网络增强 → LTE Only 已锁定" "已锁定 LTE Only 模式\n\n注意: 非 VoLTE 来电可能无法接通\n游戏结束请及时解锁 (菜单 32)"
@@ -360,7 +345,7 @@ case "$choice" in
         echo "  游戏结束请执行菜单 32 解锁"
         ;;
     32|unlock-lte)
-        # 修改点 2: 调用 carrier.sh unlock-lte
+        # 解锁 LTE，恢复 5G
         echo "=== 手动解锁 LTE, 恢复 5G ==="
         echo ""
         sh "$MODDIR/scripts/carrier.sh" unlock-lte
@@ -374,10 +359,10 @@ case "$choice" in
         echo "=== 一键还原所有设置 ==="
         rm -f "$WEAKNET_ACTIVE_FLAG" 2>/dev/null
         rm -f "$DNS_PREFETCH_PID" 2>/dev/null
-        # 关闭 Data Saver（用户细节 1: 绝对还原）
+        # 关闭 Data Saver（确保还原）
         cmd netpolicy set restrict-background false 2>/dev/null
         sh "$MODDIR/scripts/monitor.sh" stop 2>/dev/null
-        # 调用 carrier.sh unlock-lte 恢复网络制式（用户细节 2: 联动调用）
+        # 恢复网络制式
         sh "$MODDIR/scripts/carrier.sh" unlock-lte 2>/dev/null
         sh "$MODDIR/scripts/wifi.sh" reset 2>/dev/null
         sh "$MODDIR/scripts/dns.sh" reset 2>/dev/null

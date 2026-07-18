@@ -1,22 +1,13 @@
 #!/system/bin/sh
-# carrier.sh — 网络增强 v1.0 运营商识别 + 网络制式优化
+# carrier.sh — 运营商识别 & 网络制式优化 v1.0
 #
-# ⚠️ 修改点 1: 修正运营商默认值（S3 关键修正）
-#   电信: 26 → 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA, 原26不含CDMA致电信失语音)
-#   移动: 23 → 32 (NR/LTE/TD-SCDMA/GSM/WCDMA, 原23是NR only致丢失4G回退)
-#   联通: 26   (原模块正确, NR/LTE/GSM/WCDMA)
-#   广电: 26 → 33 (NR/LTE/TD-SCDMA/CDMA/EvDo/GSM/WCDMA, 全制式)
-# ⚠️ 修改点 2: 新增 lock_lte() / unlock_lte() / degrade_5g_to_4g() 函数
-#   - 全部使用 se_put_safe_verify 确保华为/荣耀/三星写入可靠性
-#   - 写入后执行功能性验证（检查 dumpsys telephony.registry 网络制式实际变化）
-# ⚠️ 修改点 3: 命名与版本统一为 v1.0 / network_enhance
+# preferred_network_mode 默认值 (AOSP RILConstants):
+#   电信(telecom): 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA)
+#   移动(mobile):  32 (NR/LTE/TD-SCDMA/GSM/WCDMA)
+#   联通(unicom):  26 (NR/LTE/GSM/WCDMA)
+#   广电(ctn):     33 (NR/LTE/TD-SCDMA/CDMA/EvDo/GSM/WCDMA)
 #
-# 来源:
-#   S3 第三步 AOSP RILConstants.java 权威数值表
-#     https://android.googlesource.com/platform/frameworks/base/+/master/telephony/java/com/android/internal/telephony/RILConstants.java
-#   S3 第三步 第5节 国产手机 PNM 支持差异表
-#   用户补充要求 2: 4G+ 跳频防护（游戏模式锁定 LTE only）
-#   用户细节问题 2: 三星 PNM "部分版本会忽略" 需功能性验证
+# LTE 锁定: mode=11, 5G→4G 降级: mode=9
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -46,36 +37,29 @@ _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; 
 unset _se_common _se_find_common
 
 # ----------------------------------------------------------------------
-# 修改点 2: 功能性验证 - 检查 PNM 写入后网络制式是否实际变化
+# se_verify_network_type_changed — 验证 PNM 写入后网络制式是否实际切换
+# 三星等 ROM 可能写入成功但未生效，通过 dumpsys telephony.registry 检查
+# 参数: $1 = 期望制式 (LTE/NR), $2 = 等待秒数 (默认 5)
+# 返回: 0 = 已切换, 1 = 未切换
 # ----------------------------------------------------------------------
-# 用户细节问题 2: 三星 PNM "部分版本会忽略" 比"写入失败"更隐蔽
-#   settings 写入可能成功（读回值正确），但系统未实际切换网络制式
-# 本函数通过 dumpsys telephony.registry 检查 mServiceState 中的网络制式
-#
-# 参数:
-#   $1 = 期望的网络制式关键字（如 "LTE" / "NR" / "NR/LTE"）
-#   $2 = 等待秒数（默认 5）
-# 返回值: 0 = 网络制式已切换, 1 = 未切换
-# 来源: S3 dumpsys telephony.registry 解析 + AOSP ServiceState.toString()
 se_verify_network_type_changed() {
     local expected="$1"
     local wait_sec="${2:-5}"
+    # 防御: 非数值入参回退到默认等待时间
     case "$wait_sec" in
         ''|*[!0-9]*) wait_sec=5 ;;
     esac
 
+    # 多次轮询检测（最多 5 次）, 应对网络注册延迟
     local i
     for i in 1 2 3 4 5; do
         sleep "$wait_sec" 2>/dev/null
         local reg
         reg=$(dumpsys telephony.registry 2>/dev/null)
 
-        # 从 mServiceState 行提取网络制式
-        # AOSP ServiceState.toString() 输出格式:
-        #   mServiceState=0 0 voice home data home CMCC CMCC 46000 ... LTE LTE ...
-        #                                                     ^^^^ ^^^^
-        #                                                     voice data
-        # 来源: S3 dumpsys telephony.registry 解析文档
+        # 从 mServiceState 提取 voice/data 网络制式
+        # 输出格式: ... CMCC CMCC 46000 ... LTE LTE ...
+        #          ^ first match  = voice, second match = data
         local mstate_line
         mstate_line=$(echo "$reg" | grep 'mServiceState=' | head -1)
 
@@ -84,9 +68,10 @@ se_verify_network_type_changed() {
             local voice_tech data_tech
             voice_tech=$(echo "$mstate_line" | grep -oE '(LTE|NR|WCDMA|GSM|CDMA|EvDo|TDSCDMA|HSPA|UMTS|EDGE|GPRS)' | head -1)
             data_tech=$(echo "$mstate_line" | grep -oE '(LTE|NR|WCDMA|GSM|CDMA|EvDo|TDSCDMA|HSPA|UMTS|EDGE|GPRS)' | sed -n '2p' 2>/dev/null)
+            # 部分 ROM 输出仅包含 voice tech, data 行缺失时复用 voice 值
             [ -z "$data_tech" ] && data_tech="$voice_tech"
 
-            # 检查是否包含期望的制式
+            # $expected 支持通配匹配: "LTE" 或 "NR/LTE" 均可, 灵活应对多制式场景
             case "$expected" in
                 *LTE*)
                     if [ "$voice_tech" = "LTE" ] || [ "$data_tech" = "LTE" ]; then
@@ -115,17 +100,8 @@ se_verify_network_type_changed() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: 锁定 LTE only（游戏模式 / 4G+ 跳频防护用）
+# lock_lte — 锁定 LTE only (mode=11), 用于游戏模式/4G+ 跳频防护
 # ----------------------------------------------------------------------
-# 来源: S3 RILConstants.java NETWORK_MODE_LTE_ONLY = 11
-#       用户补充要求 2: 4G+ 跳频防护
-# 流程:
-#   1. 检查 PNM 受限标记（已受限则不重复尝试）
-#   2. 保存当前 PNM 值到 5G 备份文件
-#   3. 使用 se_put_safe_verify 写入 mode=11（华为/荣耀/三星自动验证）
-#   4. 关闭 ENDC（OEM 兼容性过滤后）
-#   5. 功能性验证：检查网络制式是否实际切换到 LTE
-#   6. 验证失败则标记 PNM 受限
 lock_lte() {
     echo "=== 锁定 LTE only (mode=11) ==="
 
@@ -154,15 +130,16 @@ lock_lte() {
         log_msg "[lock_lte] 备份运营商默认值 mode=$default_mode ($carrier)" "[carrier]"
     fi
 
-    # 使用 se_put_safe_verify 写入 LTE only（mode=11）
-    # 华为/荣耀/三星会自动循环验证 3 次
+    # 使用 se_put_safe_verify 写入 LTE only（自动验证，华为/荣耀/三星兼容）
     local lte_only_mode
-    lte_only_mode=$(se_get_lte_only_mode)  # 返回 11
+    lte_only_mode=$(se_get_lte_only_mode)
     echo "  [..] 写入 preferred_network_mode=$lte_only_mode (LTE only)..."
+    # 同时写入 _mode1（SIM2）, 确保双卡场景下主副卡均锁定
     se_put_safe_verify global preferred_network_mode "$lte_only_mode"
     se_put_safe_verify global preferred_network_mode1 "$lte_only_mode"
 
-    # 关闭 ENDC（OEM 兼容性过滤后, 部分 OEM 会跳过）
+    # 关闭 ENDC（减少 4G+ 载波聚合跳频）
+    # 注意: 只关闭 ENDC 不关闭 enable_nr_dc, 后续 unlock 恢复 ENDC 即可回到 5G
     echo "  [..] 关闭 ENDC (减少 4G+ 载波聚合跳频)..."
     se_put global endc_capability 0
 
@@ -175,7 +152,9 @@ lock_lte() {
     else
         echo "  [WARN] PNM 写入完成但网络制式未切换"
         echo "  可能原因: 当前品牌 ROM 忽略 PNM 切换, 或所在区域无 LTE 信号"
-        # 标记 PNM 受限（避免后续反复尝试）
+        # 标记 PNM 受限（避免后续反复尝试写入）
+        # se_should_verify_write 过滤: 仅华为/荣耀/三星等支持写入验证的品牌才标记,
+        # 其他品牌直接写入成功但系统忽略 PNM 的情况极少, 无需标记
         if se_should_verify_write; then
             touch "/data/local/tmp/network_enhance_pnm_restricted_${SE_BRAND:-unknown}" 2>/dev/null
             echo "  [INFO] 已标记 ${SE_BRAND:-?} PNM 受限, 后续将跳过 PNM 切换"
@@ -186,14 +165,8 @@ lock_lte() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: 解锁 LTE（恢复运营商默认 5G 模式）
+# unlock_lte — 解锁 LTE 恢复 5G, 从备份文件还原 PNM 值
 # ----------------------------------------------------------------------
-# 来源: S3 + 用户补充要求 2
-# 流程:
-#   1. 读取 5G 备份文件中的原 PNM 值（无备份则用运营商默认值）
-#   2. 使用 se_put_safe_verify 写入
-#   3. 恢复 ENDC
-#   4. 清除 PNM 受限标记（让用户可以重新尝试）
 unlock_lte() {
     echo "=== 解锁 LTE, 恢复 5G ==="
 
@@ -215,25 +188,25 @@ unlock_lte() {
         log_msg "[unlock_lte] 读取备份 PNM=$backup_mode" "[carrier]"
     fi
 
-    # 清除 PNM 受限标记（让用户可以重新尝试）
+    # 清除 PNM 受限标记（解锁后允许重新尝试 PNM 切换）
     if se_is_pnm_restricted; then
         se_clear_pnm_restricted
         echo "  [OK] 已清除 PNM 受限标记"
     fi
 
-    # 使用 se_put_safe_verify 写入
+    # 写入备份值（同时写入 _mode1 确保双卡都恢复）
     echo "  [..] 写入 preferred_network_mode=$backup_mode..."
     se_put_safe_verify global preferred_network_mode "$backup_mode"
     se_put_safe_verify global preferred_network_mode1 "$backup_mode"
 
-    # 恢复 ENDC
+    # 恢复 ENDC（与 lock_lte 中的关闭操作对称）
     echo "  [..] 恢复 ENDC..."
     se_put global endc_capability 1
 
-    # 清理备份文件
+    # 清理备份文件（确保下次 lock-lte 重新备份最新值）
     rm -f "$SE_5G_BACKUP_FILE" 2>/dev/null
 
-    # 功能性验证
+    # 验证网络制式是否恢复到 5G
     echo "  [..] 功能性验证: 等待网络制式切换..."
     if se_verify_network_type_changed "NR" 5; then
         echo "  [OK] 已恢复 5G, 网络制式已切换"
@@ -247,13 +220,9 @@ unlock_lte() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: 5G 降级到 4G（假满格自救用）
+# degrade_5g_to_4g — 5G 降级到 4G (mode=9), 用于假满格自救
+# 与 lock_lte 区别: mode=9 允许 3G 回退, mode=11 严格锁定 LTE
 # ----------------------------------------------------------------------
-# 来源: S3 RILConstants.java NETWORK_MODE_LTE_GSM_WCDMA = 9
-#       S3 5G 假满格判定算法
-# 与 lock_lte 的区别:
-#   - lock_lte 用 mode=11 (LTE only, 严格锁定, 游戏模式用)
-#   - degrade_5g_to_4g 用 mode=9 (LTE/GSM/WCDMA, 允许 3G 回退, 假满格降级用)
 degrade_5g_to_4g() {
     echo "=== 5G 降级到 4G (mode=9) ==="
 
@@ -264,6 +233,7 @@ degrade_5g_to_4g() {
     fi
 
     # 保存当前 PNM 值（如未保存过）
+    # 与 lock_lte 共用 $SE_5G_BACKUP_FILE, 先 lock 后 degrade 不会覆盖已有备份
     if [ ! -f "$SE_5G_BACKUP_FILE" ]; then
         local current_mode
         current_mode=$(se_get global preferred_network_mode 2>/dev/null)
@@ -277,19 +247,18 @@ degrade_5g_to_4g() {
         fi
     fi
 
-    # 使用 se_put_safe_verify 写入 LTE/GSM/WCDMA（mode=9）
+    # 写入 LTE/GSM/WCDMA（mode=9）, 保留 ENDC 便于快速恢复 5G
     local lte_preferred_mode
-    lte_preferred_mode=$(se_get_lte_preferred_mode)  # 返回 9
+    lte_preferred_mode=$(se_get_lte_preferred_mode)
     se_put_safe_verify global preferred_network_mode "$lte_preferred_mode"
     se_put_safe_verify global preferred_network_mode1 "$lte_preferred_mode"
 
-    # 不强制关闭 ENDC（假满格降级保留 ENDC, 便于恢复时快速回到 5G）
     log_msg "[degrade] 已降级 5G→4G (mode=$lte_preferred_mode)" "[carrier]"
     return 0
 }
 
 # ----------------------------------------------------------------------
-# 运营商优化（保留 S1 原逻辑 + 修改点 1: 修正默认值）
+# apply_carrier_settings — 按运营商应用网络制式优化
 # ----------------------------------------------------------------------
 apply_carrier_settings() {
     [ "$ENABLE_MOBILE_OPTIMIZE" = "true" ] || {
@@ -298,6 +267,8 @@ apply_carrier_settings() {
     }
 
     local carrier="$1"
+    # 运营商解析链: 函数参数 → 全局 $CARRIER → 自动识别
+    # 三种方式优先级递减, 确保无论何种调用方式都能正确识别
     [ -z "$carrier" ] && carrier="$CARRIER"
     [ "$carrier" = "auto" ] && carrier=$(se_detect_carrier)
 
@@ -309,6 +280,8 @@ apply_carrier_settings() {
 
     echo "=== 应用运营商优化: $carrier (v1.0 OEM 兼容版) ==="
 
+    # --- 基础数据设置 ---
+    # 保持移动数据常开、优先切换到数据网络、自动切换
     se_put global mobile_data_always_on 1
     echo "  [OK] mobile_data_always_on = 1"
 
@@ -318,53 +291,56 @@ apply_carrier_settings() {
     se_put global mobile_data_auto_handover 1
     echo "  [OK] mobile_data_auto_handover = 1"
 
+    # --- 语音与视频通话增强（VoLTE / VoNR / VT）---
     se_put global volte_vt_enabled 1
     se_put global vonr_enabled 1
     se_put global vt_enabled 1
     echo "  [OK] VoLTE / VoNR / VT 启用"
 
+    # --- 5G 载波聚合与切换 ---
+    # enable_nr_dc + endc_capability + nr_handover_enabled 协同工作
+    # 关闭任意一个都可能影响 5G 连接稳定性和切换性能
     se_put global enable_nr_dc 1
     se_put global endc_capability 1
     se_put global nr_handover_enabled 1
     echo "  [OK] 5G DC + ENDC + Handover 启用"
 
-    # 修改点 1: 运营商默认值修正（S3 关键修正）
+    # 运营商默认值修正 (AOSP RILConstants 权威值)
+    # 先写 _mode1 再写 _mode: 部分 ROM 在 mode1 写入后会自动同步到 mode
     case "$carrier" in
         telecom)
             # 电信: 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA)
-            # 原 S1 错误值 26 不含 CDMA, 电信会失语音
             se_put_safe_verify global preferred_network_mode1 27
             se_put_safe_verify global preferred_network_mode 27
-            echo "  [OK] 中国电信: NR/LTE/CDMA/EvDo/GSM/WCDMA (mode=27, S3 修正)"
+            echo "  [OK] 中国电信: NR/LTE/CDMA/EvDo/GSM/WCDMA (mode=27)"
             ;;
         mobile)
             # 移动: 32 (NR/LTE/TD-SCDMA/GSM/WCDMA)
-            # 原 S1 错误值 23 是 NR only, 丢失 4G 回退
             se_put_safe_verify global preferred_network_mode1 32
             se_put_safe_verify global preferred_network_mode 32
+            # 移动/广电支持 SA（ENABLE_5G_SA 控制）, 电信/联通仅 NSA 在国内更稳定
             if [ "$ENABLE_5G_SA" = "true" ]; then
                 se_put global nr_sa_mode 1
-                echo "  [OK] 中国移动: NR/LTE/TD-SCDMA/GSM/WCDMA + VoLTE + 5G SA (mode=32, S3 修正)"
+                echo "  [OK] 中国移动: NR/LTE/TD-SCDMA/GSM/WCDMA + VoLTE + 5G SA (mode=32)"
             else
                 echo "  [OK] 中国移动: NR/LTE/TD-SCDMA/GSM/WCDMA + VoLTE (mode=32, 5G SA 关)"
             fi
             ;;
         unicom)
-            # 联通: 26 (NR/LTE/GSM/WCDMA) - 原模块正确
+            # 联通: 26 (NR/LTE/GSM/WCDMA)
             se_put_safe_verify global preferred_network_mode1 26
             se_put_safe_verify global preferred_network_mode 26
             echo "  [OK] 中国联通: NR/LTE/GSM/WCDMA + VoLTE (mode=26)"
             ;;
         ctn)
             # 广电: 33 (NR/LTE/TD-SCDMA/CDMA/EvDo/GSM/WCDMA)
-            # 原 S1 错误值 26 不含 TD-SCDMA/CDMA/EvDo
             se_put_safe_verify global preferred_network_mode1 33
             se_put_safe_verify global preferred_network_mode 33
             if [ "$ENABLE_5G_SA" = "true" ]; then
                 se_put global nr_sa_mode 1
-                echo "  [OK] 中国广电: NR/LTE/TD-SCDMA/CDMA/EvDo/GSM/WCDMA + VoLTE + 5G SA (mode=33, S3 修正)"
+                echo "  [OK] 中国广电: NR/LTE/TD-SCDMA/CDMA/EvDo/GSM/WCDMA + VoLTE + 5G SA (mode=33)"
             else
-                echo "  [OK] 中国广电: 全制式 + VoLTE (mode=33, 5G SA 关, S3 修正)"
+                echo "  [OK] 中国广电: 全制式 + VoLTE (mode=33, 5G SA 关)"
             fi
             ;;
         *)
@@ -381,6 +357,9 @@ show_carrier_status() {
     local detected
     detected=$(se_detect_carrier)
     local mccmnc carrier_name
+    # getprop 读取的是 SIM 卡上报的运营商信息（MCC-MNC + 名称）
+    # se_detect_carrier 是算法级识别（综合 MCC-MNC + PLMN + 广播判断）
+    # 两者可能不一致（如漫游场景）, 同时展示便于排查
     mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
     carrier_name=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
 
@@ -394,7 +373,7 @@ show_carrier_status() {
     echo "  设备品牌     : ${SE_BRAND:-未探测}"
     echo ""
 
-    # 修改点: 显示 PNM 受限状态
+    # 显示 PNM 受限状态
     if se_is_pnm_restricted; then
         echo "  PNM 受限     : WARN 已标记 (PNM 切换可能无效)"
     elif se_should_verify_write; then
@@ -427,6 +406,8 @@ show_carrier_status() {
 
 reset_carrier() {
     echo "=== 还原运营商设置 ==="
+    # mobile_data_always_on / volte_vt_enabled 需显式重置为系统默认值
+    # 其余 se_del 删除即可让系统使用内置默认值，避免残留自定义项
     se_put global mobile_data_always_on 0
     se_del global mobile_data_preferred
     se_del global mobile_data_auto_handover
@@ -452,24 +433,22 @@ reset_carrier() {
 }
 
 case "$1" in
+    # 简单命令: 单行内联调用, 参数透传
     apply)   apply_carrier_settings "$2" ;;
     detect)  se_detect_carrier ;;
     status)  show_carrier_status ;;
     reset)   reset_carrier ;;
+    # 复杂命令: 多行格式, 调用独立封装的函数
     lock-lte)
-        # 修改点 2: 新增 lock-lte 子命令
         lock_lte
         ;;
     unlock-lte)
-        # 修改点 2: 新增 unlock-lte 子命令
         unlock_lte
         ;;
     degrade)
-        # 修改点 2: 新增 degrade 子命令（供 monitor.sh 调用）
         degrade_5g_to_4g
         ;;
     verify-net)
-        # 修改点 2: 新增 verify-net 子命令（手动验证网络制式）
         se_verify_network_type_changed "$2" 5
         ;;
     *)
@@ -487,7 +466,7 @@ case "$1" in
         echo "  degrade           5G 降级到 4G (mode=9, 假满格自救用)"
         echo "  verify-net <key>  功能性验证: 检查网络制式是否为 <key> (LTE/NR)"
         echo ""
-        echo "运营商默认 preferred_network_mode 值 (S3 修正):"
+        echo "运营商默认 preferred_network_mode 值:"
         echo "  电信 (telecom) : 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA)"
         echo "  移动 (mobile)  : 32 (NR/LTE/TD-SCDMA/GSM/WCDMA)"
         echo "  联通 (unicom)  : 26 (NR/LTE/GSM/WCDMA)"

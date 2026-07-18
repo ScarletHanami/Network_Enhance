@@ -1,22 +1,7 @@
 #!/system/bin/sh
 # post-fs-data.sh — 网络增强 v1.0
 # AxManager BOOT_COMPLETED first sync 阶段（一次性静态优化）
-#
-# ⚠️ 修改点 1: 命名统一为 network_enhance / v1.0
-# ⚠️ 修改点 2: 移除 system.prop 引用（S2 确认 persist.* 免Root不生效）
-#   - 原 system.prop 中 persist.sys.satellite_earth.* 迁移为 settings put global
-# ⚠️ 修改点 3: 修正运营商默认值（S3 关键修正）
-#   - 电信: 26 → 27 | 移动: 23 → 32 | 联通: 26 | 广电: 26 → 33
-# ⚠️ 修改点 4: 新增 Android 版本检测（用户补充要求 5）
-# ⚠️ 修改点 5: 绝对不启动 monitor.sh（用户细节 2）
-#   - monitor.sh 主循环只能在 service.sh (late_start 阶段) 启动
-#   - 此阶段系统服务可能未完全就绪, 启动后台进程会失败
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 一次性静态优化
-#   S2 第二步: system.prop 免Root不生效结论
-#   S3 第三步: 运营商默认值修正
-#   用户细节 2: post-fs-data.sh 与 service.sh 职责分离
+# 此阶段仅执行 settings 写入，不启动后台进程
 
 SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
 
@@ -52,14 +37,14 @@ log_msg "网络增强 v${SE_VERSION} 启动 (post-fs-data)" "[boot]"
 log_msg "环境=$(detect_env) brand=${SE_BRAND:-?} api=${SE_API:-?} pwd=$(pwd)" "[boot]"
 
 # ===============================
-# 修改点 4: Android 版本检测（用户补充要求 5）
+# Android 版本检测
 # ===============================
 if ! se_is_android_14_plus; then
     log_msg "[WARN] 当前 Android API=$(se_get_api) 低于 34, 部分功能可能受限" "[boot]"
 fi
 
 # ===============================
-# 修改点 2: 迁移 system.prop 功能（S2 确认 persist.* 免Root不生效）
+# 迁移 system.prop 功能到 settings global
 # ===============================
 # 原 system.prop 内容:
 #   persist.sys.satellite_earth.version=1.0
@@ -70,7 +55,7 @@ se_put global network_enhance_activated 1
 log_msg "已迁移 system.prop 功能到 settings global" "[boot]"
 
 # ===============================
-# WiFi 优化（保留 S1 v6.3.0）
+# WiFi 优化
 # ===============================
 apply_wifi_optimize() {
     [ "$ENABLE_WIFI_OPTIMIZE" = "true" ] || { log_msg "WiFi 优化已禁用" "[wifi]"; return 0; }
@@ -92,9 +77,9 @@ apply_wifi_optimize() {
 }
 
 # ===============================
-# 移动网络优化（修改点 3: 修正运营商默认值）
+# 移动网络优化（修正运营商默认值）
 # ===============================
-# 来源: S3 AOSP RILConstants.java 权威数值表
+# AOSP RILConstants.java 权威数值表:
 #   电信: 26 → 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA, 原26不含CDMA致电信失语音)
 #   移动: 23 → 32 (NR/LTE/TD-SCDMA/GSM/WCDMA, 原23是NR only致丢失4G回退)
 #   联通: 26   (原模块正确, NR/LTE/GSM/WCDMA)
@@ -115,15 +100,15 @@ apply_mobile_optimize() {
     local carrier="$CARRIER"
     [ "$carrier" = "auto" ] && carrier=$(se_detect_carrier)
 
-    # 修改点 3: 使用 se_put_safe_verify 确保华为/荣耀/三星写入可靠性
+    # 使用 se_put_safe_verify 确保华为/荣耀/三星写入可靠性
     case "$carrier" in
         telecom)
-            # 电信: 27 (S3 修正)
+            # 电信: 27（修正值，原26不含CDMA致电信失语音）
             se_put_safe_verify global preferred_network_mode1 27
             se_put_safe_verify global preferred_network_mode 27
             ;;
         mobile)
-            # 移动: 32 (S3 修正)
+            # 移动: 32（修正值，原23是NR only致丢失4G回退）
             se_put_safe_verify global preferred_network_mode1 32
             se_put_safe_verify global preferred_network_mode 32
             [ "$ENABLE_5G_SA" = "true" ] && se_put global nr_sa_mode 1
@@ -134,7 +119,7 @@ apply_mobile_optimize() {
             se_put_safe_verify global preferred_network_mode 26
             ;;
         ctn)
-            # 广电: 33 (S3 修正)
+            # 广电: 33（修正值，全制式含5G）
             se_put_safe_verify global preferred_network_mode1 33
             se_put_safe_verify global preferred_network_mode 33
             [ "$ENABLE_5G_SA" = "true" ] && se_put global nr_sa_mode 1
@@ -159,7 +144,7 @@ apply_persistent_group() {
 }
 
 # ===============================
-# 主流程（修改点 5: 绝对不启动 monitor.sh）
+# 主流程（此阶段不启动 monitor.sh）
 # ===============================
 # 此阶段仅执行一次性静态 settings 写入
 # monitor.sh 主循环在 service.sh (late_start 阶段) 启动

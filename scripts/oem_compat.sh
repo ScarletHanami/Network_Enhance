@@ -1,26 +1,8 @@
 #!/system/bin/sh
 # oem_compat.sh — 网络增强 v1.0 OEM 兼容性数据库
-#
-# ⚠️ 修改点 1: 厂商矩阵保留并扩展（S1 原 6 厂商 + S3 国产差异表）
-# ⚠️ 修改点 2: 华为/荣耀 PNM 写入支持（用户补充要求 + S3 第5节）
-#   - 5G NR 私有键跳过（避免崩溃）
-#   - 但 preferred_network_mode 不跳过（S3 Reddit 反馈可用）
-# ⚠️ 修改点 3: 新增 se_should_verify_write() 品牌标记函数（用户细节提醒 3）
-#   - 华为/荣耀返回 0（需要写入验证）
-#   - 其他品牌返回 1（已知可用）
-# ⚠️ 修改点 4: se_show_oem_info() 显示 PNM 支持情况
-# ⚠️ 修改点 5: 版本号与命名统一为 v1.0 / network_enhance
-#
-# 来源:
-#   S1 第一步: 原模块 v6.3.0 OEM 矩阵
-#   S3 第三步: 国产手机 Android 14/15 网络设置差异表
-#     - 小米 HyperOS: https://www.reddit.com/r/HyperOS/
-#     - vivo OriginOS: https://www.reddit.com/r/Vivo/
-#     - 华为 HarmonyOS: https://www.reddit.com/r/Huawei/
-#     - 荣耀 MagicOS: https://www.reddit.com/r/Honor/
 
 # ----------------------------------------------------------------------
-# 厂商探测（保留 S1 原逻辑）
+# 厂商探测
 # ----------------------------------------------------------------------
 se_detect_brand() {
     local brand
@@ -61,20 +43,20 @@ se_detect_soc() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 3: 品牌标记函数 - 是否需要写入验证（用户细节提醒 3）
+# 品牌是否需要写入验证
 # ----------------------------------------------------------------------
-# 来源: S3 第5节国产差异表 + 用户补充要求 4
-#   华为/荣耀: PNM 写入可能受限, 必须用 se_put_verify 验证
-#   小米/vivo/三星/OPPO: 已知 PNM 可用, 用 se_put 即可
+# 华为/荣耀: PNM 写入可能受限, 须用 se_put_verify 验证
+# 三星: 部分版本会忽略写入, 也纳入验证
+# 其他品牌: 已知 PNM 可用, 直接写入
 # 返回值: 0 = 需要写入验证, 1 = 不需要
 se_should_verify_write() {
     local brand="${SE_BRAND:-$(se_detect_brand)}"
     case "$brand" in
         huawei|honor)
-            return 0  # 需要写入验证（S3 Reddit 反馈部分版本受限）
+            return 0  # 需要写入验证（部分版本受限）
             ;;
         samsung)
-            return 0  # 修改点: 三星纳入验证（S3 "部分版本会忽略" 更隐蔽）
+            return 0  # 三星部分版本会忽略写入
             ;;
         *)
             return 1  # 已知可用
@@ -83,13 +65,10 @@ se_should_verify_write() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 2: 品牌是否支持 preferred_network_mode 切换（S3 关键修正）
+# 品牌是否支持 preferred_network_mode 切换
 # ----------------------------------------------------------------------
-# 来源: S3 第5节 国产手机 Android 14/15 网络设置差异表
-#   - OPPO/小米/vivo: 完全支持
-#   - 三星 OneUI: 可用但部分版本会忽略
-#   - 华为/荣耀: 可用但 5G NR 键跳过（用户补充要求 5）
-#   - 未知品牌: 保守可用
+# OPPO/小米: 完全支持; 三星: 可用但部分版本会忽略;
+# 华为/荣耀: PNM 可用, 但 5G NR 私有键跳过; 未知: 保守可用
 # 返回值: 0 = 支持, 1 = 不支持
 se_is_brand_supports_pnm() {
     local brand="${SE_BRAND:-$(se_detect_brand)}"
@@ -116,12 +95,11 @@ se_is_brand_supports_pnm() {
 }
 
 # ----------------------------------------------------------------------
-# 厂商 × 键 兼容性矩阵（保留 S1 原逻辑 + S3 修正）
+# 厂商 × 键 兼容性矩阵
 # ----------------------------------------------------------------------
 # 返回值: 0=可写, 1=跳过, 2=替换
-# 关键修正（修改点 2）:
-#   - 华为/荣耀: preferred_network_mode 不再跳过（S3 + 用户补充要求）
-#   - 5G NR 私有键仍跳过（避免崩溃）
+# 关键: 华为/荣耀的 preferred_network_mode 不跳过（S3 修正）,
+#   但 5G NR 私有键仍跳过（避免崩溃）
 se_key_supported() {
     local key="$1"
     local brand="${SE_BRAND:-$(se_detect_brand)}"
@@ -135,11 +113,10 @@ se_key_supported() {
             ;;
     esac
 
-    # 修改点 2: preferred_network_mode 全品牌不跳过（S3 修正）
-    # 原 S1 中华为/荣耀跳过此键, 但 S3 Reddit 反馈 PNM 仍可用
+    # preferred_network_mode 全品牌不跳过（S3 修正: PNM 仍可用）
     case "$key" in
         preferred_network_mode|preferred_network_mode1)
-            # 全品牌支持（S3 修正）
+            # 全品牌支持
             se_is_brand_supports_pnm && return 0 || return 1
             ;;
     esac
@@ -172,7 +149,7 @@ se_key_supported() {
             esac
             ;;
         huawei|honor)
-            # 修改点 2: 5G NR 私有键跳过, 但 PNM 不跳过（已在上方处理）
+            # 5G NR 私有键跳过, 但 PNM 不跳过（已在上方处理）
             case "$key" in
                 nr_sa_mode|enable_nr_dc|endc_capability|nr_handover_enabled|vonr_enabled)
                                             return 1 ;;  # HarmonyOS 跳过避免崩溃
@@ -180,7 +157,7 @@ se_key_supported() {
             esac
             ;;
         oppo|oneplus|realme)
-            : # 全部支持（主测试环境, S1）
+            : # 全部支持
             ;;
     esac
 
@@ -217,7 +194,7 @@ se_key_replacement() {
 }
 
 # ----------------------------------------------------------------------
-# 安全写入封装（保留 S1 v6.3.0 强化错误吞没）
+# 安全写入封装（含 OEM 兼容性过滤 + 键名替换）
 # ----------------------------------------------------------------------
 se_put_safe() {
     local namespace="$1"
@@ -263,12 +240,11 @@ se_put_safe() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 3: 带验证的安全写入封装（华为/荣耀/三星专用）
+# 带验证的安全写入封装（华为/荣耀/三星专用）
 # ----------------------------------------------------------------------
-# 用户细节提醒 1: se_put_verify 改为循环验证 3 次
-# 用户细节提醒 3: 华为/荣耀/三星品牌必须调用 se_put_verify 而非 se_put
-# 用户细节问题 1: 其他品牌必须走 se_put (保留 OEM 过滤), 不能直接 settings put
-# 此函数封装了 OEM 兼容性过滤 + 写入验证的完整流程
+# 封装 OEM 兼容性过滤 + 写入验证完整流程:
+#   - 华为/荣耀/三星: 写入后循环验证 (se_put_verify)
+#   - 其他品牌: 走标准 OEM 过滤写入 (se_put)
 # 用法: se_put_safe_verify global preferred_network_mode 11
 se_put_safe_verify() {
     local namespace="$1"
@@ -291,7 +267,7 @@ se_put_safe_verify() {
                     touch "/data/local/tmp/network_enhance_pnm_restricted_${SE_BRAND:-unknown}" 2>/dev/null
                 fi
             else
-                # 修改点: 其他品牌走标准 OEM 过滤写入（保留 nr_sa_mode→nr_mode 等替换逻辑）
+                # 其他品牌走标准 OEM 过滤写入（保留 nr_sa_mode→nr_mode 等替换逻辑）
                 se_put "$namespace" "$key" "$value"
             fi
             return 0
@@ -324,7 +300,6 @@ se_put_safe_verify() {
 # ----------------------------------------------------------------------
 # 检测当前品牌是否已被标记为 PNM 受限
 # ----------------------------------------------------------------------
-# 来源: 用户细节提醒 3 + se_put_safe_verify 标记机制
 # 返回值: 0 = PNM 受限, 1 = 正常
 se_is_pnm_restricted() {
     local brand="${SE_BRAND:-$(se_detect_brand)}"
@@ -339,7 +314,7 @@ se_clear_pnm_restricted() {
 }
 
 # ----------------------------------------------------------------------
-# 厂商信息一次性探测（保留 S1 原逻辑 + 修改点 5 命名更新）
+# 厂商信息一次性探测
 # ----------------------------------------------------------------------
 se_probe_oem_env() {
     SE_BRAND=$(se_detect_brand 2>/dev/null)
@@ -356,7 +331,7 @@ se_probe_oem_env() {
 }
 
 # ----------------------------------------------------------------------
-# 修改点 4: 厂商信息展示（增加 PNM 支持情况显示）
+# 厂商信息展示（含 PNM 支持情况）
 # ----------------------------------------------------------------------
 se_show_oem_info() {
     echo "[OEM 兼容性信息]"
@@ -367,7 +342,7 @@ se_show_oem_info() {
     echo "  ROM 标识    : ${SE_ROM_NAME:-未知}"
     echo ""
 
-    # 修改点 4: PNM 支持情况（S3 新增）
+    # PNM 支持情况
     echo "[preferred_network_mode 支持情况]"
     if se_is_brand_supports_pnm; then
         if se_is_pnm_restricted; then
@@ -388,7 +363,6 @@ se_show_oem_info() {
     fi
     echo ""
 
-    # 运营商默认值显示（S3 修正后的正确值）
     echo "[运营商默认 preferred_network_mode 值]"
     echo "  电信 (telecom) : 27 (NR/LTE/CDMA/EvDo/GSM/WCDMA)"
     echo "  移动 (mobile)  : 32 (NR/LTE/TD-SCDMA/GSM/WCDMA)"

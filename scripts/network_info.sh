@@ -338,11 +338,11 @@ get_network_type_name() {
     if [ -z "$rat" ] || [ "$rat" = "Unknown" ] || [ "$rat" = "unknown" ] || [ "$rat" = "NR_SA,Unknown" ]; then
         rat=$(echo "$rat" | tr ',' '\n' | head -1)
         case "$rat" in
-            NR_SA)  echo "5G SA"; return 0 ;;
-            NR_NSA) echo "5G NSA"; return 0 ;;
-            NR*)    echo "5G NR"; return 0 ;;
-            LTE_CA) echo "4G LTE (CA)"; return 0 ;;
-            LTE*)   echo "4G LTE"; return 0 ;;
+            NR_SA)  echo "5G SA (20)"; return 0 ;;
+            NR_NSA) echo "5G NSA (20)"; return 0 ;;
+            NR*)    echo "5G NR (20)"; return 0 ;;
+            LTE_CA) echo "4G LTE_CA (19)"; return 0 ;;
+            LTE*)   echo "4G LTE (13)"; return 0 ;;
             *)      ;;
         esac
         echo "无"
@@ -350,15 +350,15 @@ get_network_type_name() {
     fi
     rat=$(echo "$rat" | cut -d',' -f1)
     case "$rat" in
-        NR_SA)                  echo "5G SA" ;;
-        NR_NSA)                 echo "5G NSA" ;;
-        NR*)                    echo "5G NR" ;;
-        LTE_CA)                 echo "4G LTE (CA)" ;;
-        LTE*)                   echo "4G LTE" ;;
-        HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA" ;;
-        UMTS)                   echo "3G UMTS" ;;
-        EDGE)                   echo "2G EDGE" ;;
-        GPRS)                   echo "2G GPRS" ;;
+        NR_SA)                  echo "5G SA (20)" ;;
+        NR_NSA)                 echo "5G NSA (20)" ;;
+        NR*)                    echo "5G NR (20)" ;;
+        LTE_CA)                 echo "4G LTE_CA (19)" ;;
+        LTE*)                   echo "4G LTE (13)" ;;
+        HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat"))" ;;
+        UMTS)                   echo "3G UMTS (3)" ;;
+        EDGE)                   echo "2G EDGE (2)" ;;
+        GPRS)                   echo "2G GPRS (1)" ;;
         *)                      echo "${rat:-无}" ;;
     esac
 }
@@ -452,15 +452,15 @@ get_network_type_name_2() {
     if [ -n "$rat" ] && [ "$rat" != "Unknown" ] && [ "$rat" != "unknown" ]; then
         rat=$(echo "$rat" | cut -d',' -f1)
         case "$rat" in
-            NR_SA)                  echo "5G SA"; return 0 ;;
-            NR_NSA)                 echo "5G NSA"; return 0 ;;
-            NR*)                    echo "5G NR"; return 0 ;;
-            LTE_CA)                 echo "4G LTE (CA)"; return 0 ;;
-            LTE*)                   echo "4G LTE"; return 0 ;;
-            HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA"; return 0 ;;
-            UMTS)                   echo "3G UMTS"; return 0 ;;
-            EDGE)                   echo "2G EDGE"; return 0 ;;
-            GPRS)                   echo "2G GPRS"; return 0 ;;
+            NR_SA)                  echo "5G SA (20)"; return 0 ;;
+            NR_NSA)                 echo "5G NSA (20)"; return 0 ;;
+            NR*)                    echo "5G NR (20)"; return 0 ;;
+            LTE_CA)                 echo "4G LTE_CA (19)"; return 0 ;;
+            LTE*)                   echo "4G LTE (13)"; return 0 ;;
+            HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat"))"; return 0 ;;
+            UMTS)                   echo "3G UMTS (3)"; return 0 ;;
+            EDGE)                   echo "2G EDGE (2)"; return 0 ;;
+            GPRS)                   echo "2G GPRS (1)"; return 0 ;;
             *)                      ;;
         esac
     fi
@@ -471,15 +471,15 @@ get_network_type_name_2() {
         rat2_str=$(echo "$prop_main" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -n "$rat2_str" ] && [ "$rat2_str" != "Unknown" ] && [ "$rat2_str" != "unknown" ]; then
             case "$rat2_str" in
-                NR_SA)                  echo "5G SA"; return 0 ;;
-                NR_NSA)                 echo "5G NSA"; return 0 ;;
-                NR*)                    echo "5G NR"; return 0 ;;
-                LTE_CA)                 echo "4G LTE (CA)"; return 0 ;;
-                LTE*)                   echo "4G LTE"; return 0 ;;
-                HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA"; return 0 ;;
-                UMTS)                   echo "3G UMTS"; return 0 ;;
-                EDGE)                   echo "2G EDGE"; return 0 ;;
-                GPRS)                   echo "2G GPRS"; return 0 ;;
+                NR_SA)                  echo "5G SA (20)"; return 0 ;;
+                NR_NSA)                 echo "5G NSA (20)"; return 0 ;;
+                NR*)                    echo "5G NR (20)"; return 0 ;;
+                LTE_CA)                 echo "4G LTE_CA (19)"; return 0 ;;
+                LTE*)                   echo "4G LTE (13)"; return 0 ;;
+                HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat2_str"))"; return 0 ;;
+                UMTS)                   echo "3G UMTS (3)"; return 0 ;;
+                EDGE)                   echo "2G EDGE (2)"; return 0 ;;
+                GPRS)                   echo "2G GPRS (1)"; return 0 ;;
                 *)                      ;;
             esac
         fi

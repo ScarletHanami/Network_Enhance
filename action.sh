@@ -45,7 +45,8 @@ if [ -z "$_se_common" ]; then
     exit 0
 fi
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 # CI 日志入口
 se_ci_log "action.sh" "action.sh 启动 | choice=${1:-交互菜单}"
@@ -144,7 +145,7 @@ show_status() {
     print_msg "[Data Saver]"
     local ds_status
     ds_status=$(cmd netpolicy get restrict-background 2>/dev/null)
-    if [ "$ds_status" = "1" ] || echo "$ds_status" | grep -qi "enabled\|true"; then
+    if [ "$ds_status" = "1" ] || echo "$ds_status" | grep -qiE "enabled|true"; then
         print_msg "  → 状态       : WARN 已启用 (后台数据受限)"
     else
         print_msg "  → 状态       : OK 已禁用"
@@ -242,7 +243,7 @@ if [ -z "$1" ]; then
     show_menu
     if [ -t 0 ]; then
         echo ""
-        echo -n "请选择操作 [1-32]: "
+        printf "请选择操作 [1-35]: "
         read choice
     else
         print_msg ""
@@ -342,7 +343,10 @@ case "$choice" in
         sh "$MODDIR/scripts/carrier.sh" lock-lte
         if [ -f "$MODDIR/scripts/weaknet.sh" ]; then
             # 直接发送通知（避免 source 整个 weaknet.sh）
-            se_notify "网络增强 → LTE Only 已锁定" "已锁定 LTE Only 模式\n\n注意: 非 VoLTE 来电可能无法接通\n游戏结束请及时解锁 (菜单 32)"
+            se_notify "网络增强 → LTE Only 已锁定" "已锁定 LTE Only 模式
+
+注意: 非 VoLTE 来电可能无法接通
+游戏结束请及时解锁 (菜单 32)"
             log_msg "[action-31] LTE Only 已手动锁定, 语音通知已发送" "[action]"
         fi
         echo ""
@@ -396,7 +400,7 @@ case "$choice" in
         ;;
     28)
         se_ci_log "action.sh" "menu: view log"
-        [ -f "$SE_LOG_FILE" ] && tail -50 "$SE_LOG_FILE" || echo "日志不存在: $SE_LOG_FILE"
+        [ -f "$SE_LOG_FILE" ] && tail -50 "$SE_LOG_FILE" 2>/dev/null || echo "日志不存在: $SE_LOG_FILE"
         ;;
     29)
         se_ci_log "action.sh" "menu: clear log"

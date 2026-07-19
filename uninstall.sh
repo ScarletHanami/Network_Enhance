@@ -39,7 +39,8 @@ _se_common=$(_se_find_common 2>/dev/null)
 if [ -n "$_se_common" ]; then
     . "$_se_common" 2>/dev/null
 fi
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "uninstall.sh" "uninstall.sh 启动"
 
@@ -204,6 +205,9 @@ done
 
 # 清理 CI 调试日志（大写 N，与 network_enhance* 不同前缀）
 rm -f "/data/local/tmp/Network_Enhance.log" 2>/dev/null
+
+# 清理 dumpsys 缓存目录
+rm -rf "/data/local/tmp/network_enhance_dumpsys_cache" 2>/dev/null
 
 _uninstall_log "运行时残留文件已清理"
 se_ci_log "uninstall.sh" "运行时文件清理"

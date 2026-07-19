@@ -26,7 +26,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "dns.sh" "dns.sh 启动 | cmd=$1 $2"
 
@@ -51,7 +52,7 @@ get_provider_host() {
         adguard|adg)             echo "dns.adguard.com" ;;
         dnspod|pod)              echo "dns.pub" ;;
         mopo|mopohmt|suning)     echo "dnshand.suning.com" ;;
-        "")                      echo "$PRIVATE_DNS_HOST" ;;
+        "")                      echo "${PRIVATE_DNS_HOST:-dns.alidns.com}" ;;
         *)                       echo "$1" ;;
     esac
 }
@@ -106,11 +107,11 @@ check_dot_reachable() {
     local host="$1"
     [ -z "$host" ] && host="$PRIVATE_DNS_HOST"
 
-    echo "自检: $host:853 (DoT 端口) ..."
+    echo "自检: ${host}:853 (DoT 端口) ..."
 
     if command -v nc >/dev/null 2>&1; then
         if nc -w 3 -z "$host" 853 2>/dev/null; then
-            echo "  [OK] nc 测试通过: $host:853 可达"
+            echo "  [OK] nc 测试通过: ${host}:853 可达"
             return 0
         else
             echo "  [--] nc 测试失败，尝试 ping 兜底"

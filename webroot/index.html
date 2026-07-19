@@ -282,7 +282,9 @@
       if (!SE_CI_LOGON) return;
       try {
         var ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
-        execSync('echo "' + ts + ' [' + src + '] INFO ' + msg.replace(/"/g, '\\"') + '" >> /data/local/tmp/Network_Enhance.log 2>/dev/null');
+        // 使用 printf + 单引号防 shell 注入（$() 在双引号内仍会被执行）
+        var safeMsg = (ts + ' [' + src + '] INFO ' + msg).replace(/'/g, "'\\''");
+        execSync("printf '%s\\n' '" + safeMsg + "' >> /data/local/tmp/Network_Enhance.log 2>/dev/null");
       } catch (e) { }
     }
 
@@ -310,7 +312,12 @@
         delete pendingLoadTimers[key];
         if (pendingLoads[key]) return;         // 双重检查
         pendingLoads[key] = true;
+        // 安全超时：15s 后强制解锁，防止 exec 回调丢失导致永久阻塞
+        var safetyTimer = setTimeout(function () {
+          delete pendingLoads[key];
+        }, 15000);
         fn(function () {
+          clearTimeout(safetyTimer);
           delete pendingLoads[key];
         });
       }, delayMs);
@@ -597,10 +604,13 @@
         (function detectCiMode() {
           try {
             if (!MODDIR) return;
-            var ver = execSync('grep "^version=" ' + MODDIR + '/module.prop 2>/dev/null | cut -d= -f2').trim();
-            if (ver.indexOf('ci') === 0) {
-              SE_CI_LOGON = true;
-              ciLog('index.html', 'CI 调试模式已启用 | version=' + ver);
+            var r = execSync('grep "^version=" ' + MODDIR + '/module.prop 2>/dev/null | cut -d= -f2');
+            if (r && r.stdout) {
+              var ver = r.stdout.trim();
+              if (ver.indexOf('ci') === 0) {
+                SE_CI_LOGON = true;
+                ciLog('index.html', 'CI 调试模式已启用 | version=' + ver);
+              }
             }
           } catch (e) { }
         })();
@@ -653,6 +663,7 @@
 
     function toast(msg, duration) {
       var el = document.getElementById('toast');
+      if (!el) return;
       el.textContent = msg;
       el.className = 'toast show';
       // 清除之前的定时器，避免旧 toast 提前关闭新 toast
@@ -661,8 +672,11 @@
     }
 
     function showAlert(content, duration) {
-      document.getElementById('alert-content').textContent = content;
-      document.getElementById('alert-box').className = 'alert-box show';
+      var alertContent = document.getElementById('alert-content');
+      var alertBox = document.getElementById('alert-box');
+      if (!alertContent || !alertBox) return;
+      alertContent.textContent = content;
+      alertBox.className = 'alert-box show';
       // 自动关闭：默认 3 秒，传 0 则不自动关闭
       if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
       var d = (duration === undefined) ? 3000 : duration;
@@ -673,7 +687,8 @@
 
     function hideAlert() {
       if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
-      document.getElementById('alert-box').className = 'alert-box';
+      var alertBox = document.getElementById('alert-box');
+      if (alertBox) alertBox.className = 'alert-box';
     }
 
     function runCmd(cmd, name, after) {
@@ -694,11 +709,19 @@
       cmdRunningName = name;
       showExecIndicator(name);
       diag('runCmd: ' + name + ' | ' + cmd.substring(0, 80));
+      // 安全超时：15s 后强制解锁，防止 exec 回调不被调用导致按钮永久禁用
+      var cmdTimeout = setTimeout(function () {
+        hideExecIndicator();
+        cmdRunning = false;
+        cmdRunningName = '';
+        toast(name + ' 超时');
+      }, 15000);
       // 关键：用双 rAF 让出主线程，确保浏览器先绘制指示器再执行同步阻塞的 exec
       // Axeron.exec 是同步的，若不yield，className 变更会被合并到 exec 之后的同一帧，导致指示器不显示
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           exec(cmd, function (errno, stdout, stderr) {
+            clearTimeout(cmdTimeout);
             // 完成时立即隐藏指示器，避免与反馈弹窗同时显示
             hideExecIndicator();
             try {
@@ -871,7 +894,7 @@
           if (pingVal === 'timeout') {
             pingEl.textContent = 'timeout (不通)';
             pingEl.className = 'stat-value bad';
-          } else if (pingVal === '2000') {
+          } else if (String(pingVal) === '2000') {
             pingEl.textContent = '2000 ms (较差)';
             pingEl.className = 'stat-value warn';
           } else {
@@ -1133,7 +1156,8 @@
     }
 
     function escapeHtml(s) {
-      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function loadEnv() {
@@ -1162,7 +1186,9 @@
       loadMonitorStatus();
       loadDnsStatus();
       loadWeaknetStatus();
-      if (done) done();
+      // 子操作均为异步（throttledLoad + exec），done() 延迟 200ms 执行
+      // 避免 throttledLoad('refreshAll') 在子操作完成前提前释放锁
+      if (done) setTimeout(done, 200);
     }
 
     function refreshAll() {
@@ -1193,9 +1219,16 @@
           setApiBanner('warn', '⚠ MODDIR 探测失败，点击"重新诊断"');
         }
 
-        setInterval(loadNetworkInfo, 30000);
-        setInterval(loadMonitorStatus, 60000);
-        setInterval(loadWeaknetStatus, 60000);
+        var intervals = [];
+        intervals.push(setInterval(loadNetworkInfo, 30000));
+        intervals.push(setInterval(loadMonitorStatus, 60000));
+        intervals.push(setInterval(loadWeaknetStatus, 60000));
+
+        window.addEventListener('beforeunload', function () {
+          intervals.forEach(function (id) { clearInterval(id); });
+          if (toast._timer) clearTimeout(toast._timer);
+          if (showAlert._timer) clearTimeout(showAlert._timer);
+        });
       });
     });
   </script>

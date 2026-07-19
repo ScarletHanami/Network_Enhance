@@ -131,4 +131,4 @@ ENABLE_LTE_LOCK_FOR_GAME=true
 MIN_API_LEVEL=34
 
 # CI 调试模式埋点（config.sh 被 source 时记录）
-[ -n "$(command -v se_ci_log 2>/dev/null)" ] && se_ci_log "config.sh" "config.sh 加载 | CARRIER=$CARRIER MONITOR=$ENABLE_MONITOR"
+[ "$(type -t se_ci_log 2>/dev/null)" = "function" ] && se_ci_log "config.sh" "config.sh 加载 | CARRIER=$CARRIER MONITOR=$ENABLE_MONITOR"

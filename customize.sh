@@ -77,7 +77,6 @@ case "$_brand" in
     *)                  _brand_norm="$_brand" ;;
 esac
 ui_print "  → 品牌归一化: $_brand_norm"
-se_ci_log "customize.sh" "OEM 预检 | brand=$_brand_norm soc=$_soc"
 
 _hw=$(getprop ro.hardware 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')
 case "$_hw" in
@@ -88,6 +87,7 @@ case "$_hw" in
     *)                      _soc="unknown" ;;
 esac
 ui_print "  → 芯片平台  : $_soc"
+se_ci_log "customize.sh" "OEM 预检 | brand=$_brand_norm soc=$_soc"
 
 mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
 carrier_name=$(getprop gsm.sim.operator.alpha 2>/dev/null)
@@ -204,8 +204,10 @@ done
 if [ -f "$MODPATH/system.prop" ]; then
     ui_print "  [WARN] 检测到 system.prop 残留，删除中..."
     rm -f "$MODPATH/system.prop" 2>/dev/null
+    ui_print "  [OK] system.prop 已移除（persist.* 免Root不生效）"
+else
+    ui_print "  [OK] system.prop 不存在（已正确移除）"
 fi
-ui_print "  [OK] system.prop 已移除（persist.* 免Root不生效）"
 
 ui_print "  [OK] 权限已设置"
 se_ci_log "customize.sh" "权限设置完成"

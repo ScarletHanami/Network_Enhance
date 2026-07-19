@@ -1205,10 +1205,25 @@ se_overall_level() {
     fi
 
     # se_detect_network_type 返回 "5G"/"4G"/"3G"/"2G"/"wifi"/"none"
+    # 双连接时 (移动+WiFi 同时在线) 取两者中较好的等级
     local base_level
     case "$net_type" in
         wifi)       base_level="$wifi_lvl" ;;
-        5G|4G|3G|2G) base_level="$mobile_lvl" ;;
+        5G|4G|3G|2G)
+            base_level="$mobile_lvl"
+            # 双连接: WiFi 也在线时, 取两者中较好的等级
+            if [ "$wifi_lvl" != "unknown" ]; then
+                case "$base_level" in
+                    strong) ;;
+                    normal) [ "$wifi_lvl" = "strong" ] && base_level="strong" ;;
+                    weak)
+                        case "$wifi_lvl" in
+                            strong|normal) base_level="$wifi_lvl" ;;
+                        esac
+                        ;;
+                esac
+            fi
+            ;;
         *)          base_level="normal" ;;
     esac
 

@@ -26,7 +26,10 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
+
+se_ci_log "monitor.sh" "monitor.sh 启动 | cmd=${1:-}"
 
 # ----------------------------------------------------------------------
 # 防振荡参数默认值（从 config.sh 读取）
@@ -39,6 +42,7 @@ unset _se_common _se_find_common
 # 等级显示名
 # ----------------------------------------------------------------------
 get_level_display_name() {
+    se_ci_log "monitor.sh" "get_level_display_name: entry | level=$1"
     case "$1" in
         strong)    echo "强信号 (省电)" ;;
         normal)    echo "正常" ;;
@@ -50,6 +54,7 @@ get_level_display_name() {
 }
 
 get_level_description() {
+    se_ci_log "monitor.sh" "get_level_description: entry | level=$1"
     case "$1" in
         strong)    echo "允许休眠+扫描慢+省电" ;;
         normal)    echo "标准优化+扫描中" ;;
@@ -70,6 +75,8 @@ get_level_description() {
 compute_overall_level_v2() {
     local net_type="$1" wifi_rssi="$2" mobile_dbm="$3" ping_ms="$4"
     local nr_sinr="${5:-}"
+
+    se_ci_log "monitor.sh" "compute_overall_level_v2: entry | net=$net_type ping=$ping_ms sinr=$nr_sinr"
 
     # 无网络时直接返回
     if [ -z "$net_type" ] || [ "$net_type" = "none" ]; then
@@ -128,6 +135,8 @@ compute_overall_level_v2() {
     fi
 
     # 基础等级判定
+    # se_detect_network_type 返回 "5G"/"4G"/"3G"/"2G"/"wifi"/"none"
+    # 双连接时 (移动+WiFi 同时在线) 取两者中较好的等级
     local base_level="normal"
     case "$net_type" in
         wifi)
@@ -136,19 +145,22 @@ compute_overall_level_v2() {
                 *)                  base_level="normal" ;;
             esac
             ;;
-        mobile)
+        5G|4G|3G|2G)
             case "$mobile_lvl" in
                 strong|normal|weak) base_level="$mobile_lvl" ;;
                 *)                  base_level="normal" ;;
             esac
-            ;;
-        dual)
-            if [ "$wifi_lvl" = "weak" ] || [ "$mobile_lvl" = "weak" ]; then
-                base_level="weak"
-            elif [ "$wifi_lvl" = "strong" ] && [ "$mobile_lvl" = "strong" ]; then
-                base_level="strong"
-            else
-                base_level="normal"
+            # 双连接: WiFi 也在线时, 取两者中较好的等级
+            if [ "$wifi_lvl" != "unknown" ]; then
+                case "$base_level" in
+                    strong) ;;  # 移动已最强, 不降级
+                    normal) [ "$wifi_lvl" = "strong" ] && base_level="strong" ;;
+                    weak)
+                        case "$wifi_lvl" in
+                            strong|normal) base_level="$wifi_lvl" ;;
+                        esac
+                        ;;
+                esac
             fi
             ;;
         *)      base_level="normal" ;;
@@ -200,6 +212,7 @@ compute_overall_level_v2() {
         echo "normal"
         return 0
     fi
+    se_ci_log "monitor.sh" "compute_overall_level_v2: result=$base_level"
     echo "$base_level"
     return 0
 }
@@ -211,6 +224,7 @@ apply_dynamic_params() {
     local level="$1"
     local rssi_abs="$2"
 
+    se_ci_log "monitor.sh" "apply_dynamic_params: entry | level=$level"
     case "$level" in
         strong|normal|weak|critical|no_network) ;;
         *) level="normal" ;;
@@ -233,11 +247,10 @@ apply_dynamic_params() {
     local params interval scan_ms bad_rssi mobile_ka ping_chk
     params=$(se_compute_dynamic_params "$level" "$rssi_abs" 2>/dev/null)
     [ -z "$params" ] && params="120 15000 -88 1 1"
-    interval=$(echo "$params" | awk '{print $1}')
-    scan_ms=$(echo "$params" | awk '{print $2}')
-    bad_rssi=$(echo "$params" | awk '{print $3}')
-    mobile_ka=$(echo "$params" | awk '{print $4}')
-    ping_chk=$(echo "$params" | awk '{print $5}')
+    # 单次 read 替代 5 次 awk，减少进程创建
+    read -r interval scan_ms bad_rssi mobile_ka ping_chk <<EOF
+$params
+EOF
     [ -z "$interval" ] && interval=120
     [ -z "$scan_ms" ] && scan_ms=15000
     [ -z "$bad_rssi" ] && bad_rssi=-88
@@ -291,9 +304,6 @@ apply_dynamic_params() {
             ;;
     esac
 
-    [ -z "$interval" ] && interval=120
-    [ -z "$scan_ms" ] && scan_ms=15000
-    [ -z "$bad_rssi" ] && bad_rssi=-88
     echo "${interval} ${scan_ms} ${bad_rssi}"
     return 0
 }
@@ -302,6 +312,7 @@ apply_dynamic_params() {
 # 状态文件写入
 # ----------------------------------------------------------------------
 write_state() {
+    se_ci_log "monitor.sh" "write_state: entry | level=$2"
     local net_type="$1"
     local level="$2"
     local rssi="$3"
@@ -332,6 +343,7 @@ EOF
 # 通知发送
 # ----------------------------------------------------------------------
 send_switch_notification() {
+    se_ci_log "monitor.sh" "send_switch_notification: entry | level=$1"
     [ "$ENABLE_SWITCH_NOTIFY" = "true" ] || return 0
     local level="$1" rssi="$2" dbm="$3" ping_ms="$4" net_type="$5"
     local display_name desc
@@ -362,11 +374,24 @@ send_switch_notification() {
 #   NO_NET_FAIL_COUNT    = 降级后无网络连续失败次数
 # 防振荡: 降级后冷却期内不恢复 5G
 # 隔离: weaknet 激活时跳过
+# 检测 weaknet 标志 + PID 存活状态，PID 不存活时自动清除残留标志
+is_weaknet_active() {
+    [ -f "$WEAKNET_ACTIVE_FLAG" ] || return 1
+    local wn_pid
+    wn_pid=$(cat "$WEAKNET_ACTIVE_FLAG" 2>/dev/null)
+    if [ -n "$wn_pid" ] && kill -0 "$wn_pid" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$WEAKNET_ACTIVE_FLAG" 2>/dev/null
+    log_msg "[让位] weaknet 进程已退出，自动清除残留标志" "[monitor]"
+    return 1
+}
+
 handle_fake_5g() {
     [ "$ENABLE_FAKE_5G_DETECTION" = "true" ] || return 0
 
     # weaknet 激活时绝对禁止任何操作
-    if [ -f "$WEAKNET_ACTIVE_FLAG" ]; then
+    if is_weaknet_active; then
         return 0
     fi
 
@@ -375,10 +400,19 @@ handle_fake_5g() {
         return 0
     fi
 
+    se_ci_log "monitor.sh" "handle_fake_5g: entry | active=$FAKE_5G_ACTIVE"
+
+    # 无网络回退刚发生，本轮跳过假满格检测，避免"回退→降级"同轮振荡
+    if [ "$ROLLBACK_JUST_OCCURRED" = "1" ]; then
+        ROLLBACK_JUST_OCCURRED=0
+        return 0
+    fi
+
     if se_detect_fake_5g; then
         # 检测到假满格
         if [ -z "$FAKE_5G_ACTIVE" ] || [ "$FAKE_5G_ACTIVE" = "0" ]; then
             # 首次触发，立即降级
+            se_ci_log "monitor.sh" "handle_fake_5g: 触发降级"
             log_msg "[5G降级] 触发假满格, 调用 carrier.sh degrade" "[5g]"
 
             # 调用 carrier.sh 的 degrade_5g_to_4g 函数
@@ -391,7 +425,9 @@ handle_fake_5g() {
             NO_NET_FAIL_COUNT=0
             DOWNGRADE_TIMESTAMP=$(date +%s 2>/dev/null || echo 0)
 
-            se_notify "网络增强 → 5G假满格降级" "检测到5G信号良好但实际网络差\n已自动降级到4G\n冷却期内不会恢复5G"
+            se_notify "网络增强 → 5G假满格降级" "检测到5G信号良好但实际网络差
+已自动降级到4G
+冷却期内不会恢复5G"
             log_msg "[5G降级] 已降级到 4G, 冷却 ${DOWNGRADE_COOLDOWN_SEC}s 内不恢复" "[5g]"
         else
             # 已处于降级状态, 记录日志
@@ -420,6 +456,7 @@ handle_fake_5g() {
 
             if [ "$RECOVERY_COUNT" -ge "$DEGRADE_RECOVERY_COUNT" ]; then
                 # 连续 N 次正常, 恢复 5G
+                se_ci_log "monitor.sh" "handle_fake_5g: 触发恢复 | count=$RECOVERY_COUNT"
                 log_msg "[5G恢复] 连续${DEGRADE_RECOVERY_COUNT}次正常, 调用 carrier.sh unlock-lte" "[5g]"
 
                 if [ -f "$MODDIR/scripts/carrier.sh" ]; then
@@ -430,7 +467,8 @@ handle_fake_5g() {
                 RECOVERY_COUNT=0
                 NO_NET_FAIL_COUNT=0
                 DOWNGRADE_TIMESTAMP=0
-                se_notify "网络增强 → 5G已恢复" "网络质量已稳定\n已自动切回5G模式"
+                se_notify "网络增强 → 5G已恢复" "网络质量已稳定
+已自动切回5G模式"
             fi
         fi
     fi
@@ -442,7 +480,7 @@ handle_fake_5g() {
 # weaknet 激活时绝对禁止
 handle_no_network_rollback() {
     # weaknet 激活时绝对禁止
-    if [ -f "$WEAKNET_ACTIVE_FLAG" ]; then
+    if is_weaknet_active; then
         return 0
     fi
 
@@ -451,6 +489,8 @@ handle_no_network_rollback() {
 
     # PNM 受限品牌跳过
     se_is_pnm_restricted && return 0
+
+    se_ci_log "monitor.sh" "handle_no_network_rollback: entry | ping=$1"
 
     local ping_ms="$1"
     local net_type="$2"
@@ -468,11 +508,14 @@ handle_no_network_rollback() {
                 sh "$MODDIR/scripts/carrier.sh" unlock-lte >/dev/null 2>&1
             fi
 
-            FAKE_5G_ACTIVE=0
+            # 保持 FAKE_5G_ACTIVE=1 并重置冷却时间, 防止下一轮立即重新降级
+            # ROLLBACK_JUST_OCCURRED 跳过本轮 handle_fake_5g, 冷却期阻止后续振荡
+            DOWNGRADE_TIMESTAMP=$(date +%s 2>/dev/null || echo 0)
             RECOVERY_COUNT=0
             NO_NET_FAIL_COUNT=0
-            DOWNGRADE_TIMESTAMP=0
-            se_notify "网络增强 → 4G无改善已恢复5G" "降级到4G后网络仍不通\n已尝试恢复5G模式"
+            ROLLBACK_JUST_OCCURRED=1
+            se_notify "网络增强 → 4G无改善已恢复5G" "降级到4G后网络仍不通
+已尝试恢复5G模式"
         fi
     else
         # 网络正常, 重置失败计数
@@ -489,15 +532,17 @@ handle_no_network_rollback() {
 # ----------------------------------------------------------------------
 # weaknet 激活时跳过本轮; 5G 假满格降级 + 无网络回退 均在内部处理
 run_monitor_loop() {
+    se_ci_log "monitor.sh" "run_monitor_loop: entry"
     local current_level="init"
     local loop_count=0
     FAKE_5G_ACTIVE=0
     RECOVERY_COUNT=0
     NO_NET_FAIL_COUNT=0
     DOWNGRADE_TIMESTAMP=0
+    ROLLBACK_JUST_OCCURRED=0
 
-    trap 'rm -f "$SE_PID_FILE" "$SE_STATE_FILE" 2>/dev/null; log_msg "调度器退出 (信号)" "[monitor]"; exit 0' INT TERM
-    trap 'rm -f "$SE_PID_FILE" "$SE_STATE_FILE" 2>/dev/null; log_msg "调度器退出 (EXIT)" "[monitor]"' EXIT
+    trap 'rm -f "$SE_PID_FILE" 2>/dev/null; log_msg "调度器退出 (信号)" "[monitor]"; exit 0' INT TERM
+    trap 'rm -f "$SE_PID_FILE" 2>/dev/null; log_msg "调度器退出 (EXIT)" "[monitor]"' EXIT
 
     echo $$ > "$SE_PID_FILE" 2>/dev/null
 
@@ -508,6 +553,7 @@ run_monitor_loop() {
 
     # 首轮立即检测一次
     sleep 2
+    se_dumpsys_clear
     local _net_type _wifi_rssi _mobile_dbm _ping_ms _nr_rsrp _nr_sinr _target_level _rssi_abs _applied_params
     _net_type=$(se_detect_network_type 2>/dev/null)
     _wifi_rssi=$(se_get_wifi_rssi 2>/dev/null)
@@ -542,14 +588,17 @@ run_monitor_loop() {
     write_state "$_net_type" "$_target_level" "${_wifi_rssi:-?}" "${_mobile_dbm:-无}" "$_ping_ms" "$_applied_params" "${_nr_rsrp:-?}" "${_nr_sinr:-?}" 0
     log_msg "[首轮] 等级=$current_level net=$_net_type rssi=$_wifi_rssi dbm=$_mobile_dbm ping=${_ping_ms}ms rsrp=$_nr_rsrp sinr=$_nr_sinr" "[monitor]"
 
-    # settings 写入放后台
-    apply_dynamic_params "$_target_level" "$_rssi_abs" >/dev/null 2>&1 &
+    # settings 写入（同步执行，避免后台进程累积僵尸）
+    apply_dynamic_params "$_target_level" "$_rssi_abs" >/dev/null 2>&1
 
     while true; do
         loop_count=$((loop_count + 1))
 
+        # 清除 dumpsys 缓存（确保每轮获取最新数据）
+        se_dumpsys_clear
+
         # weaknet 激活时跳过本轮, 禁止任何降级/升级/无网络回退操作
-        if [ -f "$WEAKNET_ACTIVE_FLAG" ]; then
+        if is_weaknet_active; then
             if [ $((loop_count % 5)) -eq 0 ]; then
                 log_msg "[让位] weaknet 激活, 跳过本轮 (loop #$loop_count), 不执行任何 PNM 操作" "[monitor]"
             fi
@@ -606,8 +655,8 @@ run_monitor_loop() {
             write_state "$net_type" "$target_level" "${wifi_rssi:-?}" "${mobile_dbm:-无}" "$ping_ms" "$applied_params" "${nr_rsrp:-?}" "${nr_sinr:-?}" "$FAKE_5G_ACTIVE"
             send_switch_notification "$current_level" "${wifi_rssi:-?}" "${mobile_dbm:-无}" "$ping_ms" "$net_type"
 
-            # settings 写入放后台
-            apply_dynamic_params "$target_level" "$rssi_abs" >/dev/null 2>&1 &
+            # settings 写入（同步执行，避免后台进程累积僵尸）
+            apply_dynamic_params "$target_level" "$rssi_abs" >/dev/null 2>&1
         fi
 
         # 所有等级统一使用 MONITOR_NORMAL_INTERVAL（移除原按等级区分间隔的逻辑）
@@ -626,6 +675,7 @@ run_monitor_loop() {
 # 启动/停止/状态管理
 # ----------------------------------------------------------------------
 start_monitor() {
+    se_ci_log "monitor.sh" "start_monitor: entry"
     [ "$ENABLE_MONITOR" = "true" ] || {
         echo "智能调度器已禁用 (ENABLE_MONITOR=false)"
         return 0
@@ -663,6 +713,7 @@ start_monitor() {
 }
 
 stop_monitor() {
+    se_ci_log "monitor.sh" "stop_monitor: entry"
     if ! [ -f "$SE_PID_FILE" ]; then
         echo "[INFO] 调度器未运行"
         return 0
@@ -706,6 +757,7 @@ stop_monitor() {
 }
 
 show_status() {
+    se_ci_log "monitor.sh" "show_status: entry"
     echo "=== 智能调度器状态 v${SE_VERSION} ==="
 
     if ! [ -f "$SE_PID_FILE" ]; then
@@ -744,7 +796,7 @@ show_status() {
         done < "$SE_STATE_FILE"
     fi
 
-    if [ -f "$WEAKNET_ACTIVE_FLAG" ]; then
+    if is_weaknet_active; then
         echo ""
         echo "  [!] weaknet 模式激活中，调度器已让位（禁止任何 PNM 操作）"
     fi
@@ -752,6 +804,7 @@ show_status() {
 }
 
 detect_once() {
+    se_ci_log "monitor.sh" "detect_once: entry"
     echo "=== 单次网络检测 (v${SE_VERSION}) ==="
     local net_type wifi_rssi mobile_dbm ping_ms nr_rsrp nr_sinr nr_rsrq
     net_type=$(se_detect_network_type)
@@ -782,7 +835,7 @@ detect_once() {
         echo "  5G假满格判定 : OK 正常"
     fi
 
-    if [ -f "$WEAKNET_ACTIVE_FLAG" ]; then
+    if is_weaknet_active; then
         echo ""
         echo "  [!] weaknet 模式激活中, 调度器会跳过参数应用"
     fi
@@ -794,9 +847,10 @@ detect_once() {
 }
 
 case "$1" in
-    start)   start_monitor ;;
-    stop)    stop_monitor ;;
+    start)   se_ci_log "monitor.sh" "cmd=start"; start_monitor ;;
+    stop)    se_ci_log "monitor.sh" "cmd=stop"; stop_monitor ;;
     restart)
+        se_ci_log "monitor.sh" "cmd=restart"
         stop_monitor
         local_wait=0
         while se_monitor_running && [ "$local_wait" -lt 5 ]; do
@@ -805,18 +859,20 @@ case "$1" in
         done
         start_monitor
         ;;
-    status)  show_status ;;
-    detect)  detect_once ;;
+    status)  se_ci_log "monitor.sh" "cmd=status"; show_status ;;
+    detect)  se_ci_log "monitor.sh" "cmd=detect"; detect_once ;;
     notify)
+        se_ci_log "monitor.sh" "cmd=notify"
         arg_level="${2:-normal}"
         send_switch_notification "$arg_level" "?" "?" "?" "wifi"
         echo "[OK] 通知已发送 (等级=$arg_level)"
         ;;
     cancel)
+        se_ci_log "monitor.sh" "cmd=cancel"
         se_notify_cancel
         echo "[OK] 已撤销调度器通知"
         ;;
-    _loop)   run_monitor_loop ;;
+    _loop)   se_ci_log "monitor.sh" "cmd=_loop"; run_monitor_loop ;;
     *)
         echo "网络增强动态自适应调度器 v${SE_VERSION}"
         echo ""

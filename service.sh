@@ -30,15 +30,18 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 sleep 3
+se_ci_log "service.sh" "service.sh 启动 (late_start) | pwd=$(pwd 2>/dev/null)"
 log_msg "网络增强 v${SE_VERSION} service.sh 启动 (late_start) pwd=$(pwd)" "[boot]"
 
 # ===============================
 # late_start 阶段验证 — 重新应用 settings, 防止系统重置
 # ===============================
 verify_and_reapply() {
+    se_ci_log "service.sh" "verify_and_reapply: entry"
     [ "$ENABLE_LATE_VERIFY" = "true" ] || return 0
     log_msg "开始 late_start 阶段验证..." "[verify]"
     local reapply_count=0
@@ -87,6 +90,7 @@ verify_and_reapply() {
 # DNS 预热 — 后台执行, 不阻塞
 # ===============================
 apply_dns_prefetch() {
+    se_ci_log "service.sh" "apply_dns_prefetch: entry"
     [ "$ENABLE_DNS_PREFETCH" = "true" ] || return 0
     if ! wait_network_ready 10; then
         log_msg "网络未就绪，跳过 DNS 预热" "[dns]"
@@ -109,6 +113,7 @@ apply_dns_prefetch() {
 # 网络状态快照
 # ===============================
 log_network_snapshot() {
+    se_ci_log "service.sh" "log_network_snapshot: entry"
     log_msg "--- 网络状态快照 ---" "[snapshot]"
     local mccmnc carrier_name
     mccmnc=$(getprop gsm.sim.operator.numeric 2>/dev/null | head -1)
@@ -127,6 +132,7 @@ log_network_snapshot() {
 # monitor.sh 主循环必须且只能在此 (late_start) 阶段通过 nohup 后台启动,
 # 不阻塞 service.sh。启动前调用 wait_network_ready 确保网络就绪。
 start_smart_monitor() {
+    se_ci_log "service.sh" "start_smart_monitor: entry"
     [ "$ENABLE_MONITOR" = "true" ] || return 0
     if [ ! -f "$MODDIR/scripts/monitor.sh" ]; then
         log_msg "调度器脚本缺失，跳过启动" "[monitor]"
@@ -149,10 +155,15 @@ start_smart_monitor() {
 # ===============================
 # 主流程
 # ===============================
+se_ci_log "service.sh" "主流程: verify_and_reapply"
 verify_and_reapply
+se_ci_log "service.sh" "主流程: apply_dns_prefetch"
 apply_dns_prefetch
+se_ci_log "service.sh" "主流程: log_network_snapshot"
 log_network_snapshot
+se_ci_log "service.sh" "主流程: start_smart_monitor"
 start_smart_monitor
 
+se_ci_log "service.sh" "service.sh 完成"
 log_msg "service.sh 完成，模块就绪" "[boot]"
 exit 0

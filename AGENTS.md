@@ -1,5 +1,7 @@
 # AGENTS.md — 项目上下文指南
 
+> ⚠️ **重要：AGENTS.md 是"活文档"** — 任何代码变更（新增/修改/删除功能、重构、调整架构）后，**应考虑同步更新本文档**，确保其反映代码真实状态。过时的 AGENTS.md 可能误导协作者。
+
 ## 项目概况
 
 **Network_Enhance (AxManager 网络增强模块)**
@@ -9,6 +11,7 @@
 - **运行环境**: AxManager (ADB shell, `#!/system/bin/sh`)
 - **最低 Android**: 14 (API 34)
 - **当前版本**: 见 `module.prop` 中的 `version` 和 `versionCode` 字段
+- **CI 构建版本**: CI 构建产物中 `version` 字段被替换为 `v<timestamp>`（如 `v20260719_120000`），`versionCode` 被替换为日期数字（如 `20260719`），与 artifact 名称保持一致
 - **支持的品牌**: 小米/HyperOS, OPPO/ColorOS, vivo/OriginOS, 华为/HarmonyOS, 荣耀/MagicOS, 三星/OneUI
 - **技术约束**: 无 Root 权限，所有操作基于 `settings put/get`、`cmd wifi/netpolicy`、`getprop/setprop`、`dumpsys`
 
@@ -133,57 +136,75 @@ monitor.sh（主循环，120s 周期）
 | 视频/社交/下载模式 | 菜单 1/3/4 | 严格让位 | 无 PNM 操作 |
 | 5G 假满格降级 | 自动触发 | 主动执行 | degrade_5g_to_4g (mode=9) |
 
----
+### 6. 双卡数据采集策略
 
-## 构建与部署
+`network_info.sh` 支持双卡设备（卡1/卡2），通过 `dumpsys telephony.registry` 的 `mPhoneId=` 分块提取：
 
-```
-发布流程：
-1. 更新 versionCode 在 customize.sh（头部注释）和 module.prop
-2. 更新 CHANGELOG.md
-3. 在项目根目录执行:
-   zip -r Network_Enhance_vX.X.X.zip \
-     scripts/ webroot/ action.sh config.sh customize.sh \
-     post-fs-data.sh service.sh uninstall.sh module.prop \
-     banner.png LICENSE README.md CHANGELOG.md
-4. 上传至 AxManager
-```
+| 数据项 | 卡1 来源 | 卡2 来源 |
+|--------|----------|----------|
+| **运营商** | `getprop gsm.sim.operator.alpha` → `cut -d',' -f1`（取逗号分隔第一段） | 同主属性 `cut -d',' -f2`（取第二段），fallback 到 `.2` 后缀属性 |
+| **网络制式** | `_extract_slot1_block()` (mPhoneId=0 块) → `mDataNetworkType` | `_extract_slot2_block()` (mPhoneId=1 块) → `mDataNetworkType`，多阶段兜底（见下） |
+| **信号 dBm/Level** | `_extract_slot1_block()` → `mDbm`/`mLevel` (父级) | `_extract_slot2_block()` → `mDbm`/`mLevel` (父级) |
 
-注意：CI 构建流水线（`.github/workflows/build.yml`）不在本仓库中，如需配置请参考 AxManager 插件 CI 文档。
+**核心原则：**
+- `dumpsys telephony.registry` 中每个卡槽对应一个 `mPhoneId=N` 块（N=0 是卡1，N=1 是卡2）
+- 用 `_extract_slot1_block()`/`_extract_slot2_block()` (awk flag 模式) 精确截取对应块，避免误取到另一卡的数据
+- 信号等级 (`mLevel`) 必须取**父级** `mSignalStrength.mLevel`（系统信号栏值），不取 `mNr` 子块 level，否则会因 NR 子信号等级与整体 mLevel 不一致造成"信号越强等级越低"的视觉错乱
+- RAT 编号优先 `mDataNetworkType`，缺失时 fallback `mVoiceNetworkType`/`mNetworkType` (ROM 变体)，最终 `getprop` 兜底
+- 兜底策略：若 `mPhoneId=` 分块不存在（部分 ROM），回退到全局第 N 个匹配项 (`sed -n '2p'`)
 
----
+**卡2 RAT 多阶段兜底链（`_get_rat_number_2`）：**
 
-## 测试指南
+| 阶段 | 数据源 | 适用场景 |
+|------|--------|---------|
+| A | dumpsys 分块 (`mPhoneId=1` 块内 `mDataNetworkType=`/`mDataNetworkType:`/`mVoiceNetworkType=`/`mNetworkType=`) | 标准 AOSP 双卡输出 |
+| B | dumpsys 全局第 2 个匹配项 (`sed -n '2p'`) | 无 `mPhoneId=` 分块标识 |
+| C | `getprop gsm.network.type.2` 后缀属性 → `_str_rat_to_number` | 后缀属性存在 |
+| D | `getprop gsm.network.type` 主属性按逗号拆分取第 2 段 → `_str_rat_to_number` | 与运营商拆分一致 |
 
-### 模拟测试（PC 端）
+**字符串制式映射：** `_str_rat_to_number()` 将 getprop 返回的字符串制式（"NR"/"LTE"/"HSPA"/"UMTS"/"EDGE"/"GPRS"/"GSM"/"CDMA"/"EVDO_*"/"IWLAN"）转为 RAT 编号。
 
-```bash
-# 导出关键函数后测试
-source scripts/common.sh
-source scripts/oem_compat.sh
-# 调用目标函数验证逻辑
-```
+**RAT 编号映射：** `_rat_number_to_name()` 将 `mDataNetworkType` 数值转为可读名称（20→5G NR, 13/19→4G LTE, 3/8/9/10/14/15/17→3G, 1/2/16→2G）。
 
-### 真机验证
+**卡2 无服务显示策略：**
+- 若 `carrier2` 有值（卡2 物理存在）但 `rat`/`level`/`dbm` 全空（卡2 未激活数据/语音服务），WebUI 显示"无服务"（红色 `.bad` 样式）
+- 否则按正常状态显示
 
-1. 部署到 AxManager
-2. 执行菜单 26（模块自检）
-3. 执行菜单 30（5G 假满格自检）
-4. 检查 `/data/local/tmp/network_enhance.log`
+### 7. 信号等级分类规范（5 级）
 
-### 验证要点
+WebUI 信号等级遵循 3GPP TS 36.133/38.133 + Android `SignalStrength` 标准，统一 5 级分类：
 
-- `se_detect_carrier()` 在各运营商 SIM 卡下的识别准确性（含双卡逗号分隔场景）
-- `se_should_verify_write()` 的品牌过滤逻辑
-- `lock_lte` / `unlock_lte` 的 PNM 写入验证流程（三层验证）
-- `degrade_5g_to_4g()` 的假满格触发条件
-- `se_get_wifi_rssi()` 的四阶段 fallback 机制（cmd wifi status → dumpsys wifi → 兜底）
-- WebUI 的 `fetchStatus()` 状态更新
-- 代理白名单的 `validate_package_name()` / `validate_uid()` 安全校验
+| 等级 | 颜色类 | RSRP/dBm (LTE/NR) | SINR (dB) | WiFi RSSI (dBm) | Ping (ms) | Android Level (原始) |
+|------|--------|-------------------|-----------|-----------------|-----------|---------------------|
+| 优 (excellent) | `.excellent` (#4ade80) | ≥ -50 | ≥ 13 | ≥ -50 | < 30 | 4 (GREAT) |
+| 良 (good) | `.good` (#5dd4a3) | -67 ~ -50 | 5 ~ 13 | -65 ~ -50 | 30 ~ 80 | 3~4 (GOOD~GREAT) |
+| 中 (warn) | `.warn` (#f0b056) | -85 ~ -67 | 0 ~ 5 | -75 ~ -65 | 80 ~ 150 | 2~3 (MODERATE~GOOD) |
+| 差 (poor) | `.poor` (#ff8c69) | -100 ~ -85 | -5 ~ 0 | -85 ~ -75 | 150 ~ 300 | 1~2 (POOR~MODERATE) |
+| 无 (bad) | `.bad` (#ff6b7a) | < -100 | < -5 | < -85 | ≥ 300 | 0~1 (NONE~POOR) |
+
+`webroot/index.html` 中 `rsrpClass`/`sinrClass`/`rssiClass`/`levelClass`/`dbmClass`/`pingClass` 函数实现该分类。
+
+注意：前端 level 显示（如 "3/4"）由 `dbmToLevel()` 函数根据 dBm 值实时计算，不再依赖后端 Android Level 原始值。
 
 ---
 
 ## 可维护性指南
+
+### 维护 AGENTS.md（首要规则）
+
+**每次变更代码后，应考虑检查并更新 AGENTS.md 中以下对应部分：**
+
+| 变更类型 | 需更新的 AGENTS.md 章节 |
+|---------|----------------------|
+| 新增/删除/重命名脚本文件 | 目录结构、调度器架构（如涉及 monitor） |
+| 修改函数签名或行为 | 关键架构决策、测试验证要点 |
+| 新增/移除品牌支持 | 项目概况（品牌列表）、OEM 兼容策略、可维护性指南（添加新品牌步骤） |
+| 新增场景模式 | 场景模式隔离表、可维护性指南（添加新场景模式步骤） |
+| 修改 WebUI | 代码约定（WebUI 规范）、测试验证要点 |
+| 修改构建流程 | 项目概况（CI 构建版本）、build.yml |
+| 调整版本号策略 | 项目概况（当前版本描述） |
+
+判断标准：**如果有人在阅读 AGENTS.md 后会对代码产生错误预期，那就说明需要更新了。**
 
 ### 添加新品牌支持
 
@@ -206,12 +227,3 @@ source scripts/oem_compat.sh
 2. 确保 `validate_package_name()` 和 `validate_uid()` 安全校验
 3. 在 `action.sh` 菜单中添加对应入口
 4. 在 WebUI 中添加交互卡片
-
-### 调试技巧
-
-- 查看运行时日志: `tail -f /data/local/tmp/network_enhance.log`
-- 查看 settings 写入: `settings list global | grep -i "network\|preferred\|endc\|wifi"`
-- 查看当前 PNM: `settings get global preferred_network_mode`
-- 查看网络制式实际状态: `dumpsys telephony.registry | grep -E 'mServiceState|NR|LTE'`
-- 诊断数据抓取: `sh scripts/diag_dump.sh`（输出到 `/data/local/tmp/network_enhance_diag.txt`）
-- 查看 PNM 受限标记: `ls /data/local/tmp/network_enhance_pnm_restricted_*`

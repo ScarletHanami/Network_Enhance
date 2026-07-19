@@ -346,7 +346,7 @@
 **如用户发现上述假设不成立，请在反馈中附上：**
 - 设备品牌型号
 - Android 版本
-- 模块日志（`/data/local/tmp/network_enhance.log`）
+- 模块日志（`/data/local/tmp/Network_Enhance/network_enhance.log`）
 - 具体失效现象
 
 ---
@@ -433,7 +433,7 @@ sh /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance/scripts/moni
 # 查看当前 PNM 值（应显示 9）
 settings get global preferred_network_mode
 # 查看日志
-tail -20 /data/local/tmp/network_enhance.log
+tail -20 /data/local/tmp/Network_Enhance/network_enhance.log
 ```
 
 **测试后恢复**：将 `config.sh` 阈值改回默认值（-85 / 200），重启调度器。
@@ -501,7 +501,7 @@ sh /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance/scripts/moni
 4. **观察日志**（持续 30 分钟）：
 ```bash
 # 实时查看日志
-tail -f /data/local/tmp/network_enhance.log
+tail -f /data/local/tmp/Network_Enhance/network_enhance.log
 ```
 
 **预期观察**：
@@ -550,7 +550,7 @@ sh /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance/scripts/carr
 
 2. 查看日志验证三层验证：
 ```bash
-tail -30 /data/local/tmp/network_enhance.log
+tail -30 /data/local/tmp/Network_Enhance/network_enhance.log
 ```
 
 **预期观察（华为/荣耀/三星）**：

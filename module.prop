@@ -3,6 +3,6 @@ name=网络增强
 version=v1.1.4
 versionCode=114
 author=寒碑听风
-description=AxManager 免Root 网络优化 v1.1.4 | 5G假满格自动降级4G | 游戏模式锁定LTE防4G+跳频 | 代理稳定模式(VPN优化)+白名单小工具 | 修复WiFi频段误判与RSSI正数问题 | 多品牌兼容 | 双卡运营商识别
+description=AxManager 免Root 网络优化 | 5G假满格自动降级4G | 游戏模式锁定LTE防4G+跳频 | 代理稳定模式(VPN优化)+白名单小工具 | 修复WiFi频段误判与RSSI正数问题 | 多品牌兼容 | 双卡运营商识别
 banner=banner.png
 axeronPlugin=10000

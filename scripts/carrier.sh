@@ -34,17 +34,21 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
+
+se_ci_log "carrier.sh" "carrier.sh 启动 | cmd=$1"
 
 # ----------------------------------------------------------------------
 # se_verify_network_type_changed — 验证 PNM 写入后网络制式是否实际切换
 # 三星等 ROM 可能写入成功但未生效，通过 dumpsys telephony.registry 检查
-# 参数: $1 = 期望制式 (LTE/NR), $2 = 等待秒数 (默认 5)
+# 参数: $1 = 期望制式 (LTE/NR), $2 = 每轮等待秒数 (默认 5s, 共 5 轮最长 25s)
 # 返回: 0 = 已切换, 1 = 未切换
 # ----------------------------------------------------------------------
 se_verify_network_type_changed() {
     local expected="$1"
     local wait_sec="${2:-5}"
+    se_ci_log "carrier.sh" "se_verify_network_type_changed: entry | expected=$expected"
     # 防御: 非数值入参回退到默认等待时间
     case "$wait_sec" in
         ''|*[!0-9]*) wait_sec=5 ;;
@@ -103,6 +107,7 @@ se_verify_network_type_changed() {
 # lock_lte — 锁定 LTE only (mode=11), 用于游戏模式/4G+ 跳频防护
 # ----------------------------------------------------------------------
 lock_lte() {
+    se_ci_log "carrier.sh" "lock_lte: entry"
     echo "=== 锁定 LTE only (mode=11) ==="
 
     # 检查 PNM 受限标记
@@ -168,6 +173,7 @@ lock_lte() {
 # unlock_lte — 解锁 LTE 恢复 5G, 从备份文件还原 PNM 值
 # ----------------------------------------------------------------------
 unlock_lte() {
+    se_ci_log "carrier.sh" "unlock_lte: entry"
     echo "=== 解锁 LTE, 恢复 5G ==="
 
     # 读取备份的 PNM 值
@@ -203,14 +209,13 @@ unlock_lte() {
     echo "  [..] 恢复 ENDC..."
     se_put global endc_capability 1
 
-    # 清理备份文件（确保下次 lock-lte 重新备份最新值）
-    rm -f "$SE_5G_BACKUP_FILE" 2>/dev/null
-
     # 验证网络制式是否恢复到 5G
     echo "  [..] 功能性验证: 等待网络制式切换..."
     if se_verify_network_type_changed "NR" 5; then
         echo "  [OK] 已恢复 5G, 网络制式已切换"
         log_msg "[unlock_lte] 恢复 5G 成功" "[carrier]"
+        # 验证成功后才清理备份文件
+        rm -f "$SE_5G_BACKUP_FILE" 2>/dev/null
     else
         echo "  [INFO] 已写入 PNM=$backup_mode, 但网络制式未切换到 5G"
         echo "  可能原因: 当前区域无 5G 信号, 或 ROM 限制"
@@ -224,6 +229,7 @@ unlock_lte() {
 # 与 lock_lte 区别: mode=9 允许 3G 回退, mode=11 严格锁定 LTE
 # ----------------------------------------------------------------------
 degrade_5g_to_4g() {
+    se_ci_log "carrier.sh" "degrade_5g_to_4g: entry"
     echo "=== 5G 降级到 4G (mode=9) ==="
 
     # 检查 PNM 受限标记
@@ -261,6 +267,7 @@ degrade_5g_to_4g() {
 # apply_carrier_settings — 按运营商应用网络制式优化
 # ----------------------------------------------------------------------
 apply_carrier_settings() {
+    se_ci_log "carrier.sh" "apply_carrier_settings: entry | carrier=$1"
     [ "$ENABLE_MOBILE_OPTIMIZE" = "true" ] || {
         echo "移动网络优化已禁用 (config.sh: ENABLE_MOBILE_OPTIMIZE=false)"
         return 0
@@ -354,6 +361,7 @@ apply_carrier_settings() {
 }
 
 show_carrier_status() {
+    se_ci_log "carrier.sh" "show_carrier_status: entry"
     local detected
     detected=$(se_detect_carrier)
     local mccmnc carrier_name
@@ -405,6 +413,7 @@ show_carrier_status() {
 }
 
 reset_carrier() {
+    se_ci_log "carrier.sh" "reset_carrier: entry"
     echo "=== 还原运营商设置 ==="
     # mobile_data_always_on / volte_vt_enabled 需显式重置为系统默认值
     # 其余 se_del 删除即可让系统使用内置默认值，避免残留自定义项
@@ -434,21 +443,25 @@ reset_carrier() {
 
 case "$1" in
     # 简单命令: 单行内联调用, 参数透传
-    apply)   apply_carrier_settings "$2" ;;
-    detect)  se_detect_carrier ;;
-    status)  show_carrier_status ;;
-    reset)   reset_carrier ;;
+    apply)   se_ci_log "carrier.sh" "cmd=apply"; apply_carrier_settings "$2" ;;
+    detect)  se_ci_log "carrier.sh" "cmd=detect"; se_detect_carrier ;;
+    status)  se_ci_log "carrier.sh" "cmd=status"; show_carrier_status ;;
+    reset)   se_ci_log "carrier.sh" "cmd=reset"; reset_carrier ;;
     # 复杂命令: 多行格式, 调用独立封装的函数
     lock-lte)
+        se_ci_log "carrier.sh" "cmd=lock-lte"
         lock_lte
         ;;
     unlock-lte)
+        se_ci_log "carrier.sh" "cmd=unlock-lte"
         unlock_lte
         ;;
     degrade)
+        se_ci_log "carrier.sh" "cmd=degrade"
         degrade_5g_to_4g
         ;;
     verify-net)
+        se_ci_log "carrier.sh" "cmd=verify-net"
         se_verify_network_type_changed "$2" 5
         ;;
     *)

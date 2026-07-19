@@ -331,7 +331,7 @@ DEGRADE_NO_NET_ROLLBACK_COUNT=2   # 无网络回退次数
 ## 社区守则
 
 - 网络优化非万能药，体感提升约 5~15%
-- 反馈问题请附日志（`/data/local/tmp/network_enhance.log`）+ 设备品牌型号 + Android 版本 + 是否插 SIM 卡
+- 反馈问题请附日志（`/data/local/tmp/Network_Enhance/network_enhance.log`）+ 设备品牌型号 + Android 版本 + 是否插 SIM 卡
 - ADB 免Root 有边界，TCP 内核参数需 Root
 - 完全禁用 4G+ 载波聚合需 Root，本模块只能间接降低跳频概率
 

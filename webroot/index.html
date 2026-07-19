@@ -357,7 +357,7 @@
     }
 
     function execSync(cmd) {
-      ciLog('index.html', 'execSync: ' + cmd.substring(0, 80));
+      // 注意：ciLog 依赖 execSync 写日志，此处不能调 ciLog，否则形成循环递归
       if (typeof Axeron !== 'undefined' && typeof Axeron.exec === 'function') {
         try {
           var json = Axeron.exec(cmd, '{}');

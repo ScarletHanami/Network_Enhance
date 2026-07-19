@@ -38,6 +38,7 @@ se_ci_detect() {
     if [ -n "$ver" ] && echo "$ver" | grep -q '^ci'; then
         SE_CI_LOGON=1
         export SE_CI_LOGON
+        mkdir -p "$(dirname "$SE_CI_LOG_FILE")" 2>/dev/null
         se_ci_log "common.sh" "CI 调试模式已启用 | version=$ver | logon=$SE_CI_LOGON"
     fi
     return 0

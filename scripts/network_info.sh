@@ -219,12 +219,13 @@ get_carrier_name() {
 # ----------------------------------------------------------------------
 _rat_number_to_name() {
     case "$1" in
-        20)     echo "5G NR" ;;
-        13|19)  echo "4G LTE" ;;
-        3|8|9|10|14|15|17) echo "3G" ;;
-        1|2|16) echo "2G" ;;
-        4|5|6|7|12) echo "3G" ;;  # CDMA/EvDo
-        18)     echo "IWLAN" ;;
+        20)     echo "5G NR (20)"  ;;
+        19)     echo "4G LTE_CA (19)" ;;
+        13)     echo "4G LTE (13)" ;;
+        3|8|9|10|14|15|17) echo "3G ($1)" ;;
+        1|2|16) echo "2G ($1)" ;;
+        4|5|6|7|12) echo "3G ($1)" ;;  # CDMA/EvDo
+        18)     echo "IWLAN (18)" ;;
         *)      echo "" ;;
     esac
 }
@@ -252,18 +253,24 @@ get_network_type_name() {
     if [ -z "$rat" ] || [ "$rat" = "Unknown" ] || [ "$rat" = "unknown" ] || [ "$rat" = "NR_SA,Unknown" ]; then
         rat=$(echo "$rat" | tr ',' '\n' | head -1)
         case "$rat" in
-            NR|nr)      echo "5G NR"; return 0 ;;
-            LTE|lte)    echo "4G LTE"; return 0 ;;
-            *)          ;;
+            NR_SA)  echo "5G SA"; return 0 ;;
+            NR_NSA) echo "5G NSA"; return 0 ;;
+            NR*)    echo "5G NR"; return 0 ;;
+            LTE_CA) echo "4G LTE (CA)"; return 0 ;;
+            LTE*)   echo "4G LTE"; return 0 ;;
+            *)      ;;
         esac
         echo "无"
         return 0
     fi
     rat=$(echo "$rat" | cut -d',' -f1)
     case "$rat" in
-        NR|nr)                  echo "5G NR" ;;
-        LTE|lte)                echo "4G LTE" ;;
-        HSDPA|HSUPA|HSPA|HSPA+) echo "3G HSPA" ;;
+        NR_SA)                  echo "5G SA" ;;
+        NR_NSA)                 echo "5G NSA" ;;
+        NR*)                    echo "5G NR" ;;
+        LTE_CA)                 echo "4G LTE (CA)" ;;
+        LTE*)                   echo "4G LTE" ;;
+        HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA" ;;
         UMTS)                   echo "3G UMTS" ;;
         EDGE)                   echo "2G EDGE" ;;
         GPRS)                   echo "2G GPRS" ;;
@@ -317,9 +324,12 @@ get_network_type_name_2() {
     fi
     rat=$(echo "$rat" | cut -d',' -f1)
     case "$rat" in
-        NR|nr)                  echo "5G NR" ;;
-        LTE|lte)                echo "4G LTE" ;;
-        HSDPA|HSUPA|HSPA|HSPA+) echo "3G HSPA" ;;
+        NR_SA)                  echo "5G SA" ;;
+        NR_NSA)                 echo "5G NSA" ;;
+        NR*)                    echo "5G NR" ;;
+        LTE_CA)                 echo "4G LTE (CA)" ;;
+        LTE*)                   echo "4G LTE" ;;
+        HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA" ;;
         UMTS)                   echo "3G UMTS" ;;
         EDGE)                   echo "2G EDGE" ;;
         GPRS)                   echo "2G GPRS" ;;

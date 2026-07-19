@@ -27,7 +27,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "wifi.sh" "wifi.sh 启动 | cmd=$1"
 
@@ -53,13 +54,13 @@ apply_wifi() {
     se_put global wifi_suspend_optimizations_enabled 0
     echo "  [OK] wifi_suspend_optimizations_enabled = 0"
 
-    se_put global wifi_idle_ms "$WIFI_IDLE_MS"
+    se_put global wifi_idle_ms "${WIFI_IDLE_MS:-15000}"
     echo "  [OK] wifi_idle_ms = $WIFI_IDLE_MS"
 
     # 信号阈值
-    se_put global wifi_bad_rssi_threshold "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_2g "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_5g "-$WIFI_BAD_RSSI"
+    se_put global wifi_bad_rssi_threshold "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_2g "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_5g "-${WIFI_BAD_RSSI:-88}"
     echo "  [OK] wifi_bad_rssi_threshold = -$WIFI_BAD_RSSI dBm"
 
     # 网络评分
@@ -142,7 +143,7 @@ show_wifi_status() {
 
     # 频段与链路速率显示（Android 14+ 支持）
     if se_is_android_14_plus; then
-        echo "  当前频段      : $(cmd wifi status 2>/dev/null | grep -i 'frequency' | head -1 | awk '{print $NF}')"
+        echo "  当前频段      : $(cmd wifi status 2>/dev/null | grep -i 'frequency' | grep -oE '[0-9]+' | head -1) MHz"
     fi
     return 0
 }

@@ -26,7 +26,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "weaknet.sh" "weaknet.sh 启动 | cmd=$1"
 
@@ -35,7 +36,7 @@ se_ci_log "weaknet.sh" "weaknet.sh 启动 | cmd=$1"
 # ----------------------------------------------------------------------
 set_weaknet_active() {
     se_ci_log "weaknet.sh" "set_weaknet_active: entry | mode=$1"
-    touch "$WEAKNET_ACTIVE_FLAG" 2>/dev/null
+    echo "$$" > "$WEAKNET_ACTIVE_FLAG" 2>/dev/null
     log_msg "weaknet 模式激活 ($1)" "[weaknet]"
     return 0
 }
@@ -54,7 +55,10 @@ clear_weaknet_active() {
 notify_lte_only_voice_warning() {
     se_ci_log "weaknet.sh" "notify_lte_only_voice_warning: entry"
     local title="网络增强 → LTE Only 已锁定"
-    local body="已锁定 LTE Only 模式\n\n注意: 非 VoLTE 来电可能无法接通\n游戏结束请及时解锁 (菜单 32)"
+    local body="已锁定 LTE Only 模式
+
+注意: 非 VoLTE 来电可能无法接通
+游戏结束请及时解锁 (菜单 32)"
     se_notify "$title" "$body"
     log_msg "[通知] LTE Only 语音副作用警告已发送" "[weaknet]"
     return 0
@@ -94,7 +98,7 @@ dns_prefetch() {
         done
         rm -f "$DNS_PREFETCH_PID" 2>/dev/null
     ) &
-    echo $! > "$DNS_PREFETCH_PID" 2>/dev/null
+    echo "$!" > "$DNS_PREFETCH_PID" 2>/dev/null
     log_msg "DNS 预热已启动 (PID=$!): $tag" "[weaknet]"
     return 0
 }
@@ -366,7 +370,6 @@ apply_download_mode() {
 apply_normal_mode() {
     se_ci_log "weaknet.sh" "apply_normal_mode: entry"
     echo "=== 恢复默认优化模式 ==="
-    clear_weaknet_active
 
     # 关键 1: 绝对还原 Data Saver（用户细节 1 核心！）
     # 此开关为系统级, 必须确保关闭, 否则用户日常后台应用彻底无法联网
@@ -412,6 +415,8 @@ apply_normal_mode() {
     fi
 
     log_msg "已恢复默认优化模式" "[weaknet]"
+    # 在所有恢复操作完成后才清除标志，避免监控器提前介入
+    clear_weaknet_active
     echo "[OK] 已恢复默认优化"
     echo "     - Data Saver 已关闭"
     echo "     - 5G 模式已恢复"
@@ -450,7 +455,7 @@ show_status() {
     echo "[Data Saver]"
     local ds_status
     ds_status=$(cmd netpolicy get restrict-background 2>/dev/null)
-    if [ "$ds_status" = "1" ] || echo "$ds_status" | grep -qi "enabled\|true"; then
+    if [ "$ds_status" = "1" ] || echo "$ds_status" | grep -qiE "enabled|true"; then
         echo "  restrict-background       : WARN 已启用 (后台数据受限)"
     else
         echo "  restrict-background       : OK 已禁用"
@@ -517,7 +522,11 @@ apply_vpn_mode() {
         www.cloudflare.com www.google.com \
         api.cloudflare.com
 
-    se_notify "网络增强 → 代理稳定模式" "已开启代理稳定模式\n锁定4G + 移动数据保活 + 禁后台抢网\n\n若代理软件断流, 请使用下方白名单工具将其加入白名单\n结束使用后请及时恢复默认 (菜单 5)"
+    se_notify "网络增强 → 代理稳定模式" "已开启代理稳定模式
+锁定4G + 移动数据保活 + 禁后台抢网
+
+若代理软件断流, 请使用下方白名单工具将其加入白名单
+结束使用后请及时恢复默认 (菜单 5)"
     log_msg "[vpn] 代理稳定模式已应用" "[weaknet]"
 
     set_weaknet_active "vpn"
@@ -601,7 +610,8 @@ add_vpn_whitelist() {
     echo "  UID : $uid"
     if cmd netpolicy add restrict-background-whitelist "$uid" 2>/dev/null; then
         echo "  [OK] 已将 $pkg (UID=$uid) 加入后台流量白名单"
-        se_notify "网络增强 → 白名单已添加" "已将 $pkg 加入后台流量白名单\nData Saver 不再限制该应用的后台流量"
+        se_notify "网络增强 → 白名单已添加" "已将 $pkg 加入后台流量白名单
+Data Saver 不再限制该应用的后台流量"
         log_msg "[vpn-wl] 已加入白名单: $pkg (UID=$uid)" "[weaknet]"
         return 0
     else
@@ -643,7 +653,8 @@ remove_vpn_whitelist() {
     echo "  UID : $uid"
     if cmd netpolicy remove restrict-background-whitelist "$uid" 2>/dev/null; then
         echo "  [OK] 已将 $pkg (UID=$uid) 移出后台流量白名单"
-        se_notify "网络增强 → 白名单已移除" "已将 $pkg 移出后台流量白名单\n该应用的后台流量将受 Data Saver 限制"
+        se_notify "网络增强 → 白名单已移除" "已将 $pkg 移出后台流量白名单
+该应用的后台流量将受 Data Saver 限制"
         log_msg "[vpn-wl] 已移出白名单: $pkg (UID=$uid)" "[weaknet]"
         return 0
     else
@@ -660,7 +671,7 @@ list_vpn_whitelist() {
     local wl_output
     wl_output=$(cmd netpolicy list restrict-background-whitelist 2>/dev/null)
     local wl_ret=$?
-    if [ $wl_ret -ne 0 ] || [ -z "$wl_output" ]; then
+    if [ "$wl_ret" -ne 0 ] || [ -z "$wl_output" ]; then
         echo "[FAIL] 获取白名单失败 (部分ROM不支持, 或白名单为空)"
         return 1
     fi

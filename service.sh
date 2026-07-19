@@ -30,7 +30,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 sleep 3
 se_ci_log "service.sh" "service.sh 启动 (late_start) | pwd=$(pwd 2>/dev/null)"

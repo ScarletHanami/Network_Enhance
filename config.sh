@@ -66,8 +66,8 @@ ENABLE_OEM_COMPAT=true
 WIFI_STRONG_RSSI=60      # RSSI ≥ -60 = strong
 WIFI_WEAK_RSSI=75        # RSSI -60~-75 = normal, < -75 = weak
 # 移动 dBm 等级阈值（绝对值）
-MOBILE_STRONG_DBM=85     # dBm ≥ -85 = strong
-MOBILE_WEAK_DBM=105      # dBm -85~-105 = normal, < -105 = weak
+MOBILE_STRONG_DBM=67     # dBm ≥ -67 = strong (新阈值: excellent + good)
+MOBILE_WEAK_DBM=100      # dBm -67~-100 = normal (新阈值: warn + poor), < -100 = weak
 # Ping 延迟阈值（毫秒）
 PING_GOOD_MS=80          # Ping < 80ms = good
 PING_BAD_MS=200          # Ping > 200ms = bad
@@ -131,4 +131,4 @@ ENABLE_LTE_LOCK_FOR_GAME=true
 MIN_API_LEVEL=34
 
 # CI 调试模式埋点（config.sh 被 source 时记录）
-[ -n "$(command -v se_ci_log 2>/dev/null)" ] && se_ci_log "config.sh" "config.sh 加载 | CARRIER=$CARRIER MONITOR=$ENABLE_MONITOR"
+[ "$(type -t se_ci_log 2>/dev/null)" = "function" ] && se_ci_log "config.sh" "config.sh 加载 | CARRIER=$CARRIER MONITOR=$ENABLE_MONITOR"

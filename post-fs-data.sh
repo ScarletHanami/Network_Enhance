@@ -31,7 +31,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "post-fs-data.sh" "post-fs-data.sh 启动"
 log_msg "网络增强 v${SE_VERSION} 启动 (post-fs-data)" "[boot]"
@@ -65,10 +66,10 @@ apply_wifi_optimize() {
     se_put global wifi_scan_throttle_enabled 0
     se_put global wifi_framework_scan_interval_ms 15000
     se_put global wifi_suspend_optimizations_enabled 0
-    se_put global wifi_idle_ms "$WIFI_IDLE_MS"
-    se_put global wifi_bad_rssi_threshold "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_2g "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_5g "-$WIFI_BAD_RSSI"
+    se_put global wifi_idle_ms "${WIFI_IDLE_MS:-7200000}"
+    se_put global wifi_bad_rssi_threshold "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_2g "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_5g "-${WIFI_BAD_RSSI:-88}"
     se_put global wifi_networks_score_enabled 0
     se_put global wifi_max_dwell_time_ms 60000
     se_put global wifi_enhanced_mac_randomization_enabled 1

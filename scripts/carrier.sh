@@ -34,14 +34,15 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "carrier.sh" "carrier.sh 启动 | cmd=$1"
 
 # ----------------------------------------------------------------------
 # se_verify_network_type_changed — 验证 PNM 写入后网络制式是否实际切换
 # 三星等 ROM 可能写入成功但未生效，通过 dumpsys telephony.registry 检查
-# 参数: $1 = 期望制式 (LTE/NR), $2 = 等待秒数 (默认 5)
+# 参数: $1 = 期望制式 (LTE/NR), $2 = 每轮等待秒数 (默认 5s, 共 5 轮最长 25s)
 # 返回: 0 = 已切换, 1 = 未切换
 # ----------------------------------------------------------------------
 se_verify_network_type_changed() {
@@ -208,14 +209,13 @@ unlock_lte() {
     echo "  [..] 恢复 ENDC..."
     se_put global endc_capability 1
 
-    # 清理备份文件（确保下次 lock-lte 重新备份最新值）
-    rm -f "$SE_5G_BACKUP_FILE" 2>/dev/null
-
     # 验证网络制式是否恢复到 5G
     echo "  [..] 功能性验证: 等待网络制式切换..."
     if se_verify_network_type_changed "NR" 5; then
         echo "  [OK] 已恢复 5G, 网络制式已切换"
         log_msg "[unlock_lte] 恢复 5G 成功" "[carrier]"
+        # 验证成功后才清理备份文件
+        rm -f "$SE_5G_BACKUP_FILE" 2>/dev/null
     else
         echo "  [INFO] 已写入 PNM=$backup_mode, 但网络制式未切换到 5G"
         echo "  可能原因: 当前区域无 5G 信号, 或 ROM 限制"

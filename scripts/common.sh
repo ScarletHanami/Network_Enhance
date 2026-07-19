@@ -15,6 +15,30 @@ SE_LOG_TAG="NetworkEnhance"
 SE_CI_LOG_FILE="/data/local/tmp/Network_Enhance.log"
 SE_CI_LOGON=0
 
+# CI 日志写入 — 仅当 SE_CI_LOGON=1 时写入
+# 格式: YYYY-MM-DD HH:MM:SS [FILENAME] INFO message
+se_ci_log() {
+    [ "$SE_CI_LOGON" = "1" ] || return 0
+    local src="${1:-?}"
+    local msg="${2:-}"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?")
+    echo "$ts [$src] INFO $msg" >> "$SE_CI_LOG_FILE" 2>/dev/null
+    return 0
+}
+
+# CI 调试模式检测 — 读取 module.prop version 字段，ci 开头则启用
+se_ci_detect() {
+    local ver
+    ver=$(grep '^version=' "${MODDIR_ROOT:-.}/module.prop" 2>/dev/null | cut -d= -f2)
+    if [ -n "$ver" ] && echo "$ver" | grep -q '^ci'; then
+        SE_CI_LOGON=1
+        export SE_CI_LOGON
+        se_ci_log "common.sh" "CI 调试模式已启用 | version=$ver | logon=$SE_CI_LOGON"
+    fi
+    return 0
+}
+
 # 日志路径优先 /data/local/tmp（ADB 必写、稳定）
 SE_LOG_FILE="/data/local/tmp/network_enhance.log"
 if [ ! -w "$(dirname "$SE_LOG_FILE")" ] 2>/dev/null; then
@@ -151,13 +175,13 @@ if [ -z "${SE_CONFIG_LOADED:-}" ]; then
     # 加载 OEM 兼容性数据库
     if [ -n "$MODDIR_ROOT" ] && [ -f "$MODDIR_ROOT/scripts/oem_compat.sh" ]; then
         . "$MODDIR_ROOT/scripts/oem_compat.sh" 2>/dev/null
-        if command -v se_probe_oem_env >/dev/null 2>&1; then
+        if [ "$(type -t se_probe_oem_env 2>/dev/null)" = "function" ]; then
             se_probe_oem_env 2>/dev/null
         fi
     fi
 
     # CI 调试模式检测（config + OEM 加载后尽早执行）
-    if [ -n "$MODDIR_ROOT" ]; then
+    if [ -n "$MODDIR_ROOT" ] && [ -f "$MODDIR_ROOT/module.prop" ]; then
         se_ci_detect 2>/dev/null
     fi
 fi
@@ -184,8 +208,8 @@ fi
 # 信号阈值
 : "${WIFI_STRONG_RSSI:=60}"
 : "${WIFI_WEAK_RSSI:=75}"
-: "${MOBILE_STRONG_DBM:=85}"
-: "${MOBILE_WEAK_DBM:=105}"
+: "${MOBILE_STRONG_DBM:=67}"
+: "${MOBILE_WEAK_DBM:=100}"
 : "${PING_GOOD_MS:=80}"
 : "${PING_BAD_MS:=200}"
 
@@ -294,32 +318,6 @@ log_msg() {
         fi
     fi
     echo "$ts $tag $msg" >> "$SE_LOG_FILE" 2>/dev/null
-    return 0
-}
-
-# ----------------------------------------------------------------------
-# CI 调试模式检测 — 读取 module.prop version 字段，ci 开头则启用
-# ----------------------------------------------------------------------
-se_ci_detect() {
-    local ver
-    ver=$(grep '^version=' "$MODDIR_ROOT/module.prop" 2>/dev/null | cut -d= -f2)
-    if [ -n "$ver" ] && echo "$ver" | grep -q '^ci'; then
-        SE_CI_LOGON=1
-        export SE_CI_LOGON
-        se_ci_log "common.sh" "CI 调试模式已启用 | version=$ver | logon=$SE_CI_LOGON"
-    fi
-    return 0
-}
-
-# CI 日志写入 — 仅当 SE_CI_LOGON=1 时写入
-# 格式: YYYY-MM-DD HH:MM:SS [FILENAME] INFO message
-se_ci_log() {
-    [ "$SE_CI_LOGON" = "1" ] || return 0
-    local src="${1:-?}"
-    local msg="${2:-}"
-    local ts
-    ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?")
-    echo "$ts [$src] INFO $msg" >> "$SE_CI_LOG_FILE" 2>/dev/null
     return 0
 }
 
@@ -469,7 +467,7 @@ se_detect_network_type() {
             *NR*|*nr*)                  echo "5G"; return 0 ;;
             *LTE*|*lte*)                echo "4G"; return 0 ;;
             *HSDPA*|*HSUPA*|*HSPA*|*UMTS*) echo "3G"; return 0 ;;
-            *EDGE*|*GPRS*)              echo "2G"; return 0 ;;
+            *EDGE*|*GPRS*|*GSM*)        echo "2G"; return 0 ;;
             *CDMA*|*EvDo*|*TDSCDMA*)    echo "3G"; return 0 ;;
             *)                          echo "4G"; return 0 ;;  # 默认按 4G
         esac
@@ -488,7 +486,7 @@ se_detect_network_type() {
         *NR*|*nr*)                  echo "5G"; return 0 ;;
         *LTE*|*lte*)                echo "4G"; return 0 ;;
         *HSDPA*|*HSUPA*|*HSPA*|*UMTS*) echo "3G"; return 0 ;;
-        *EDGE*|*GPRS*)              echo "2G"; return 0 ;;
+        *EDGE*|*GPRS*|*GSM*)        echo "2G"; return 0 ;;
         *CDMA*|*EvDo*|*TDSCDMA*)    echo "3G"; return 0 ;;
         *)
             # 进一步检查 WiFi 状态
@@ -530,8 +528,8 @@ se_detect_carrier() {
         46003|46005|46011|46012)    echo "telecom"; return 0 ;;
         # 联通 (unicom): 46001/46006/46009
         46001|46006|46009)          echo "unicom"; return 0 ;;
-        # 移动 (mobile): 46000/46002/46004/46007/46008/46013/46015/46017
-        # 注意: 46015 在部分文献归广电，但实际双卡场景可能为移动，保留移动
+        # 移动 (mobile): 46000/46002/46004/46007/46008/46013/46017
+        # 注意: 46015 已归广电 (ctn) 分支，此处仅保留移动专属 MCC
         46000|46002|46004|46007|46008|46013|46017) echo "mobile"; return 0 ;;
         # 广电 (ctn): 46015/46020
         46015|46020)                echo "ctn"; return 0 ;;
@@ -740,13 +738,11 @@ se_get_mobile_level() {
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
     [ -z "$reg" ] && { echo ""; return 0; }
 
-    # 优先采用父级 mSignalStrength.mLevel（系统信号栏显示值，0-4）
-    # 不再取 mNr/mLte 等子块 level，因为子信号等级与整体 mLevel 可能不一致，
-    # 会造成"信号越强等级越低"的视觉错乱
+    # 与 se_get_mobile_dbm 保持完全一致的提取策略，确保 level 和 dbm 来自同一 SIM
+    # 不再使用 mSignalStrength=SignalStrength: 仅 5 行的窄窗口，避免误取子块 level
 
-    # 方法 1: 从 mSignalStrength=SignalStrength: 行及其后 5 行取父级 mLevel（最准确）
-    # 父级 mLevel 始终是 SignalStrength 的直接字段，出现在子块信息之前
-    block=$(echo "$reg" | awk '/mSignalStrength=SignalStrength:/{found=1} found{print; if(++count>=5) exit}' 2>/dev/null)
+    # 方法 1: 从卡1 块 (mPhoneId=0) 内取 mLevel（最精确，避免取到卡2 的）
+    block=$(echo "$reg" | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
     if [ -n "$block" ]; then
         level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
         [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
@@ -758,8 +754,8 @@ se_get_mobile_level() {
         [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
     fi
 
-    # 方法 2: 从卡1 块 (mPhoneId=0) 内取 mLevel（兜底，避免取到卡2 的）
-    block=$(echo "$reg" | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+    # 方法 2: 从第一个 mSignalStrength 块内取（30 行，与 se_get_mobile_dbm 一致）
+    block=$(echo "$reg" | awk '/mSignalStrength/{found=1} found{print; if(++count>=30) exit}' 2>/dev/null)
     if [ -n "$block" ]; then
         level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
         [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
@@ -948,9 +944,9 @@ se_detect_fake_5g() {
     abs_threshold=$(( -FAKE_5G_RSRP_THRESHOLD ))
     [ "$abs_threshold" -le 0 ] 2>/dev/null && abs_threshold=85
 
-    # 仅当 RSRP 强于阈值时才判定（信号差不是假满格, 是真弱）
+    # 仅当 RSRP 绝对值小于阈值绝对值时才判定（即信号严格好于阈值, 如 -80 > -85）
+    # 信号差不是假满格, 是真弱
     if [ "$abs_rsrp" -lt "$abs_threshold" ] 2>/dev/null; then
-        # RSRP ≥ -85（信号强度好）
 
         # 条件 1: Ping 过高
         if [ "$ping_ms" != "?" ] && [ -n "$ping_ms" ]; then
@@ -1025,6 +1021,8 @@ se_get_ping_ms() {
     fi
 
     # ping 全部失败时, 使用 nc 测试 DNS 53 端口可达性
+    # 注意: nc 成功时返回 2000（哨兵值，表示"可达但无法测延迟"），
+    # 上层 se_detect_fake_5g 中 [2000 > 200] → 触发假满格判定 → 这是期望行为
     if command -v nc >/dev/null 2>&1; then
         if nc -w 2 -z 223.5.5.5 53 2>/dev/null || \
            nc -w 2 -z 119.29.29.29 53 2>/dev/null; then
@@ -1206,26 +1204,18 @@ se_overall_level() {
         esac
     fi
 
+    # se_detect_network_type 返回 "5G"/"4G"/"3G"/"2G"/"wifi"/"none"
     local base_level
     case "$net_type" in
-        wifi)   base_level="$wifi_lvl" ;;
-        mobile) base_level="$mobile_lvl" ;;
-        dual)
-            if [ "$wifi_lvl" = "weak" ] || [ "$mobile_lvl" = "weak" ]; then
-                base_level="weak"
-            elif [ "$wifi_lvl" = "strong" ] && [ "$mobile_lvl" = "strong" ]; then
-                base_level="strong"
-            else
-                base_level="normal"
-            fi
-            ;;
-        *)      base_level="normal" ;;
+        wifi)       base_level="$wifi_lvl" ;;
+        5G|4G|3G|2G) base_level="$mobile_lvl" ;;
+        *)          base_level="normal" ;;
     esac
 
     # SINR < 0 直接降级到 critical
     if [ "$sinr_critical" = "1" ]; then
         echo "critical"
-        return
+        return 0
     fi
 
     if [ "$ping_critical" = "1" ]; then
@@ -1234,11 +1224,11 @@ se_overall_level() {
         else
             echo "weak"
         fi
-        return
+        return 0
     fi
     if [ "$ping_bad" = "1" ] && [ "$base_level" = "strong" ]; then
         echo "normal"
-        return
+        return 0
     fi
     echo "$base_level"
 }

@@ -21,6 +21,7 @@ _se_find_common() {
         [ -f "$d/scripts/common.sh" ] 2>/dev/null && { echo "$d/scripts/common.sh"; return 0; }
         [ -f "$d/../scripts/common.sh" ] 2>/dev/null && { echo "$d/../scripts/common.sh"; return 0; }
     fi
+    local _p
     for _p in \
         /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance \
         /data/user_de/0/android/axeron/plugins/Network_Enhance \
@@ -31,7 +32,8 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
 
 se_ci_log "network_info.sh" "network_info.sh 启动 | cmd=$1"
 
@@ -70,8 +72,8 @@ get_wifi_ssid() {
     ssid=$(echo "$dump" | grep -oE 'SSID:"[^"]+"' 2>/dev/null | head -1 | sed 's/SSID:"//;s/"$//')
     [ -n "$ssid" ] && { echo "$ssid"; return 0; }
 
-    # 模式 3: "ChinaNet-C9D3-5G" 直接带引号的 SSID
-    ssid=$(echo "$dump" | grep -oE '"[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9]+"' 2>/dev/null | head -1 | tr -d '"')
+    # 模式 3: 引号内任意合法 SSID（放宽对中文、空格、特殊字符的支持）
+    ssid=$(echo "$dump" | grep -oE '"[^"]{1,32}"' 2>/dev/null | head -1 | tr -d '"')
     [ -n "$ssid" ] && { echo "$ssid"; return 0; }
 
     # 模式 4: mWifiInfo 行内 SSID:xxx (无引号)
@@ -552,7 +554,7 @@ get_mobile_dbm_2() {
 }
 
 get_mobile_level_2() {
-    local reg block level sig_block
+    local reg block level
 
     reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
 
@@ -560,20 +562,6 @@ get_mobile_level_2() {
     if [ -n "$reg" ]; then
         block=$(echo "$reg" | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
         if [ -n "$block" ]; then
-            # 优先从 mSignalStrength=SignalStrength: 子块取父级 mLevel（避免子块干扰）
-            sig_block=$(echo "$block" | awk '/mSignalStrength=SignalStrength:/{found=1} found{print; if(++count>=5) exit}' 2>/dev/null)
-            if [ -n "$sig_block" ]; then
-                level=$(echo "$sig_block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
-                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
-
-                level=$(echo "$sig_block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
-                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
-
-                level=$(echo "$sig_block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
-                [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
-            fi
-
-            # 兜底: 直接从块内取 mLevel
             level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
             [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
 
@@ -703,7 +691,7 @@ show_full_status() {
     echo ""
 
     case "$net_type" in
-        wifi|dual)
+        wifi)
             echo "[WiFi]"
             echo "  SSID     : $(get_wifi_ssid)"
             echo "  RSSI     : $(get_wifi_rssi) dBm"
@@ -714,7 +702,7 @@ show_full_status() {
     esac
 
     case "$net_type" in
-        mobile|dual)
+        5G|4G|3G|2G)
             echo "[移动网络]"
             echo "  卡1"
             echo "    运营商   : $(get_carrier_name)"
@@ -773,15 +761,12 @@ show_brief() {
         wifi)
             echo "WiFi $(get_wifi_ssid) | $(get_wifi_rssi)dBm | $(get_wifi_link_speed)Mbps | 延迟$(get_ping_ms)ms"
             ;;
-        mobile)
+        5G|4G|3G|2G)
             echo "$(get_carrier_name) $(get_network_type_name) | Lv$(get_mobile_level)/4 $(get_mobile_dbm)dBm"
             local c2
             c2=$(get_carrier_name_2)
             [ -n "$c2" ] && echo " 卡2: $c2 $(get_network_type_name_2) | Lv$(get_mobile_level_2)/4 $(get_mobile_dbm_2)dBm"
             echo "RSRP$(get_nr_rsrp) | 延迟$(get_ping_ms)ms"
-            ;;
-        dual)
-            echo "双通道 WiFi $(get_wifi_rssi)dBm + 移动 Lv$(get_mobile_level)/4 | RSRP$(get_nr_rsrp) | 延迟$(get_ping_ms)ms"
             ;;
         none)
             echo "无网络连接"
@@ -798,18 +783,12 @@ show_multiline() {
             echo "信号: $(get_wifi_rssi) dBm | 链路: $(get_wifi_link_speed) Mbps"
             echo "延迟: $(get_ping_ms) ms"
             ;;
-        mobile)
+        5G|4G|3G|2G)
             echo "$(get_carrier_name) $(get_network_type_name)"
             echo "信号: Lv$(get_mobile_level)/4 | $(get_mobile_dbm) dBm"
             local c2m
             c2m=$(get_carrier_name_2)
             [ -n "$c2m" ] && echo "卡2: $c2m $(get_network_type_name_2) | Lv$(get_mobile_level_2)/4 $(get_mobile_dbm_2)dBm"
-            echo "5G : RSRP $(get_nr_rsrp) | SINR $(get_nr_sinr) dB"
-            echo "延迟: $(get_ping_ms) ms"
-            ;;
-        dual)
-            echo "WiFi: $(get_wifi_ssid) $(get_wifi_rssi)dBm $(get_wifi_link_speed)Mbps"
-            echo "移动: $(get_carrier_name) $(get_network_type_name) Lv$(get_mobile_level)/4 $(get_mobile_dbm)dBm"
             echo "5G : RSRP $(get_nr_rsrp) | SINR $(get_nr_sinr) dB"
             echo "延迟: $(get_ping_ms) ms"
             ;;
@@ -825,7 +804,10 @@ show_multiline() {
 # ----------------------------------------------------------------------
 json_escape() {
     local s="$1"
-    s=$(printf '%s' "$s" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r/\\r/g' | tr '\n' '\f' | sed 's/\f/\\n/g')
+    local tab cr
+    tab=$(printf '\t')
+    cr=$(printf '\r')
+    s=$(printf '%s' "$s" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$tab/\\\\t/g" -e "s/$cr/\\\\r/g" | tr '\n' '\f' | sed 's/\f/\\n/g')
     printf '%s' "$s"
 }
 
@@ -901,7 +883,7 @@ show_json() {
 
     # 从状态文件读取 5G 降级状态, 文件不存在或字段缺失时默认 "0"
     local state_fake_5g
-    state_fake_5g=$(cat "$SE_STATE_FILE" 2>/dev/null | grep '^FAKE_5G_ACTIVE=' 2>/dev/null | cut -d= -f2)
+    state_fake_5g=$(grep '^FAKE_5G_ACTIVE=' "${SE_STATE_FILE:-/dev/null}" 2>/dev/null | cut -d= -f2)
     case "$state_fake_5g" in
         1) state_fake_5g="1" ;;
         *) state_fake_5g="0" ;;  # 空值/0/异常值统一为 "0"
@@ -1058,10 +1040,9 @@ case "$1" in
         echo "NR_SCORE=$nr_score"
         echo "PING_SCORE=$ping_score"
         case "$net_type" in
-            wifi)   overall_score="$wifi_score" ;;
-            mobile) overall_score="$mobile_score" ;;
-            dual)   overall_score=$(awk -v w="$wifi_score" -v m="$mobile_score" 'BEGIN { printf "%d", (w + m) / 2 }') ;;
-            *)      overall_score=0 ;;
+            wifi)       overall_score="$wifi_score" ;;
+            5G|4G|3G|2G) overall_score="$mobile_score" ;;
+            *)          overall_score=0 ;;
         esac
         if [ "$ping_score" -gt 0 ] 2>/dev/null; then
             overall_score=$(awk -v o="$overall_score" -v p="$ping_score" 'BEGIN { printf "%d", (o * 0.6 + p * 0.4) }')

@@ -251,6 +251,8 @@
     // 基于 exec 容错增强框架 + 全局异步防假卡死框架构建
     // ======================================================================
 
+
+    //TODO: 按钮异步顶部浮窗不正常显示，等待refactor-ui
     var MODDIR = '';
     var diagLog = [];
     var API_READY = false;
@@ -280,7 +282,9 @@
       if (!SE_CI_LOGON) return;
       try {
         var ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
-        execSync('echo "' + ts + ' [' + src + '] INFO ' + msg.replace(/"/g, '\\"') + '" >> /data/local/tmp/Network_Enhance.log 2>/dev/null');
+        // 使用 printf + 单引号防 shell 注入（$() 在双引号内仍会被执行）
+        var safeMsg = (ts + ' [' + src + '] INFO ' + msg).replace(/'/g, "'\\''");
+        execSync("printf '%s\\n' '" + safeMsg + "' >> /data/local/tmp/Network_Enhance.log 2>/dev/null");
       } catch (e) { }
     }
 
@@ -308,7 +312,12 @@
         delete pendingLoadTimers[key];
         if (pendingLoads[key]) return;         // 双重检查
         pendingLoads[key] = true;
+        // 安全超时：15s 后强制解锁，防止 exec 回调丢失导致永久阻塞
+        var safetyTimer = setTimeout(function () {
+          delete pendingLoads[key];
+        }, 15000);
         fn(function () {
+          clearTimeout(safetyTimer);
           delete pendingLoads[key];
         });
       }, delayMs);
@@ -595,10 +604,13 @@
         (function detectCiMode() {
           try {
             if (!MODDIR) return;
-            var ver = execSync('grep "^version=" ' + MODDIR + '/module.prop 2>/dev/null | cut -d= -f2').trim();
-            if (ver.indexOf('ci') === 0) {
-              SE_CI_LOGON = true;
-              ciLog('index.html', 'CI 调试模式已启用 | version=' + ver);
+            var r = execSync('grep "^version=" ' + MODDIR + '/module.prop 2>/dev/null | cut -d= -f2');
+            if (r && r.stdout) {
+              var ver = r.stdout.trim();
+              if (ver.indexOf('ci') === 0) {
+                SE_CI_LOGON = true;
+                ciLog('index.html', 'CI 调试模式已启用 | version=' + ver);
+              }
             }
           } catch (e) { }
         })();
@@ -651,6 +663,7 @@
 
     function toast(msg, duration) {
       var el = document.getElementById('toast');
+      if (!el) return;
       el.textContent = msg;
       el.className = 'toast show';
       // 清除之前的定时器，避免旧 toast 提前关闭新 toast
@@ -659,8 +672,11 @@
     }
 
     function showAlert(content, duration) {
-      document.getElementById('alert-content').textContent = content;
-      document.getElementById('alert-box').className = 'alert-box show';
+      var alertContent = document.getElementById('alert-content');
+      var alertBox = document.getElementById('alert-box');
+      if (!alertContent || !alertBox) return;
+      alertContent.textContent = content;
+      alertBox.className = 'alert-box show';
       // 自动关闭：默认 3 秒，传 0 则不自动关闭
       if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
       var d = (duration === undefined) ? 3000 : duration;
@@ -671,7 +687,8 @@
 
     function hideAlert() {
       if (showAlert._timer) { clearTimeout(showAlert._timer); showAlert._timer = null; }
-      document.getElementById('alert-box').className = 'alert-box';
+      var alertBox = document.getElementById('alert-box');
+      if (alertBox) alertBox.className = 'alert-box';
     }
 
     function runCmd(cmd, name, after) {
@@ -692,11 +709,19 @@
       cmdRunningName = name;
       showExecIndicator(name);
       diag('runCmd: ' + name + ' | ' + cmd.substring(0, 80));
+      // 安全超时：15s 后强制解锁，防止 exec 回调不被调用导致按钮永久禁用
+      var cmdTimeout = setTimeout(function () {
+        hideExecIndicator();
+        cmdRunning = false;
+        cmdRunningName = '';
+        toast(name + ' 超时');
+      }, 15000);
       // 关键：用双 rAF 让出主线程，确保浏览器先绘制指示器再执行同步阻塞的 exec
       // Axeron.exec 是同步的，若不yield，className 变更会被合并到 exec 之后的同一帧，导致指示器不显示
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           exec(cmd, function (errno, stdout, stderr) {
+            clearTimeout(cmdTimeout);
             // 完成时立即隐藏指示器，避免与反馈弹窗同时显示
             hideExecIndicator();
             try {
@@ -824,14 +849,14 @@
           // 卡1
           document.getElementById('mobile-carrier-1').textContent = mobile1.carrier || '-';
           document.getElementById('mobile-rat-1').textContent = mobile1.rat || '-';
-          var lvl1El = document.getElementById('mobile-level-1');
-          var lvl1Val = mobile1.level || '?';
-          lvl1El.textContent = lvl1Val + '/4';
-          lvl1El.className = 'stat-value ' + levelClass(lvl1Val);
           var dbm1El = document.getElementById('mobile-dbm-1');
           var dbm1Val = mobile1.dbm || '?';
           dbm1El.textContent = dbm1Val + ' dBm';
           dbm1El.className = 'stat-value ' + dbmClass(dbm1Val);
+          var lvl1El = document.getElementById('mobile-level-1');
+          var lvl1FromDbm = dbmToLevel(dbm1Val);
+          lvl1El.textContent = lvl1FromDbm + '/4';
+          lvl1El.className = 'stat-value ' + levelClass(lvl1FromDbm);
 
           // 卡2
           var m2Carrier = mobile2.carrier || '';
@@ -855,12 +880,12 @@
           } else {
             rat2El.textContent = m2Rat || '-';
             rat2El.className = 'stat-value';
-            var lvl2Val = m2Level || '?';
-            lvl2El.textContent = lvl2Val + '/4';
-            lvl2El.className = 'stat-value ' + levelClass(lvl2Val);
             var dbm2Val = m2Dbm || '?';
             dbm2El.textContent = dbm2Val + ' dBm';
             dbm2El.className = 'stat-value ' + dbmClass(dbm2Val);
+            var lvl2FromDbm = dbmToLevel(dbm2Val);
+            lvl2El.textContent = lvl2FromDbm + '/4';
+            lvl2El.className = 'stat-value ' + levelClass(lvl2FromDbm);
           }
 
           var pingEl = document.getElementById('net-ping');
@@ -869,7 +894,7 @@
           if (pingVal === 'timeout') {
             pingEl.textContent = 'timeout (不通)';
             pingEl.className = 'stat-value bad';
-          } else if (pingVal === '2000') {
+          } else if (String(pingVal) === '2000') {
             pingEl.textContent = '2000 ms (较差)';
             pingEl.className = 'stat-value warn';
           } else {
@@ -935,13 +960,13 @@
     // 5G 信号质量等级判定函数（5级分类，依据 3GPP TS 38.133 + Android SignalStrength 标准）
     // 通用规则: excellent > good > warn > poor > bad
     function rsrpClass(rsrp) {
-      // 3GPP TS 38.133 NR RSRP 阈值: >=-85 优 / -95~-85 良 / -105~-95 中 / -115~-105 差 / <-115 无
+      // 信号强度分级: >=-50 优秀 / -67~-50 良好 / -85~-67 中等 / -100~-85 差 / <-100 极差
       if (rsrp === '无' || rsrp === '?' || rsrp === '') return '';
       var n = parseInt(rsrp); if (isNaN(n)) return '';
-      if (n >= -85) return 'excellent';
-      if (n >= -95) return 'good';
-      if (n >= -105) return 'warn';
-      if (n >= -115) return 'poor';
+      if (n >= -50) return 'excellent';
+      if (n >= -67) return 'good';
+      if (n >= -85) return 'warn';
+      if (n >= -100) return 'poor';
       return 'bad';
     }
     function sinrClass(sinr) {
@@ -956,18 +981,28 @@
     }
 
     function rssiClass(rssi) {
-      // WiFi RSSI 行业共识: >=-50 优 / -65~-50 良 / -75~-65 中 / -85~-75 差 / <-85 无
+      // 信号强度分级: >=-50 优秀 / -67~-50 良好 / -85~-67 中等 / -100~-85 差 / <-100 极差
       if (rssi === '?' || rssi === '') return '';
       var n = parseInt(rssi); if (isNaN(n)) return '';
       if (n >= -50) return 'excellent';
-      if (n >= -65) return 'good';
-      if (n >= -75) return 'warn';
-      if (n >= -85) return 'poor';
+      if (n >= -67) return 'good';
+      if (n >= -85) return 'warn';
+      if (n >= -100) return 'poor';
       return 'bad';
     }
+    // 将 dBm 数值映射为前端显示等级 0-4，与新阈值对齐
+    function dbmToLevel(dbm) {
+      if (dbm === '?' || dbm === '' || dbm === '无') return '?';
+      var n = parseInt(dbm); if (isNaN(n)) return '?';
+      if (n >= -50) return '4';
+      if (n >= -67) return '3';
+      if (n >= -85) return '2';
+      if (n >= -100) return '1';
+      return '0';
+    }
     function levelClass(lvl) {
-      // Android SignalStrength 5级: 0=NONE 1=POOR 2=MODERATE 3=GOOD 4=GREAT
-      if (lvl === '?' || lvl === '') return '';
+      // 由 dbmToLevel 计算前端等级，levelClass 仅做 CSS 映射
+      if (lvl === '?' || lvl === '' || lvl === '无') return '';
       var n = parseInt(lvl); if (isNaN(n)) return '';
       if (n >= 4) return 'excellent';
       if (n >= 3) return 'good';
@@ -976,14 +1011,13 @@
       return 'bad';
     }
     function dbmClass(dbm) {
-      // 3GPP TS 36.133 LTE/NR RSRP 阈值（与 rsrpClass 一致）:
-      // >=-85 优 / -95~-85 良 / -105~-95 中 / -115~-105 差 / <-115 无
+      // 信号强度分级: >=-50 优秀 / -67~-50 良好 / -85~-67 中等 / -100~-85 差 / <-100 极差
       if (dbm === '?' || dbm === '') return '';
       var n = parseInt(dbm); if (isNaN(n)) return '';
-      if (n >= -85) return 'excellent';
-      if (n >= -95) return 'good';
-      if (n >= -105) return 'warn';
-      if (n >= -115) return 'poor';
+      if (n >= -50) return 'excellent';
+      if (n >= -67) return 'good';
+      if (n >= -85) return 'warn';
+      if (n >= -100) return 'poor';
       return 'bad';
     }
     function pingClass(ms) {
@@ -1132,7 +1166,8 @@
     }
 
     function escapeHtml(s) {
-      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function loadEnv() {
@@ -1161,7 +1196,9 @@
       loadMonitorStatus();
       loadDnsStatus();
       loadWeaknetStatus();
-      if (done) done();
+      // 子操作均为异步（throttledLoad + exec），done() 延迟 200ms 执行
+      // 避免 throttledLoad('refreshAll') 在子操作完成前提前释放锁
+      if (done) setTimeout(done, 200);
     }
 
     function refreshAll() {
@@ -1192,9 +1229,16 @@
           setApiBanner('warn', '⚠ MODDIR 探测失败，点击"重新诊断"');
         }
 
-        setInterval(loadNetworkInfo, 30000);
-        setInterval(loadMonitorStatus, 60000);
-        setInterval(loadWeaknetStatus, 60000);
+        var intervals = [];
+        intervals.push(setInterval(loadNetworkInfo, 30000));
+        intervals.push(setInterval(loadMonitorStatus, 60000));
+        intervals.push(setInterval(loadWeaknetStatus, 60000));
+
+        window.addEventListener('beforeunload', function () {
+          intervals.forEach(function (id) { clearInterval(id); });
+          if (toast._timer) clearTimeout(toast._timer);
+          if (showAlert._timer) clearTimeout(showAlert._timer);
+        });
       });
     });
   </script>

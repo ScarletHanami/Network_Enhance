@@ -174,15 +174,17 @@ monitor.sh（主循环，120s 周期）
 
 WebUI 信号等级遵循 3GPP TS 36.133/38.133 + Android `SignalStrength` 标准，统一 5 级分类：
 
-| 等级 | 颜色类 | RSRP/dBm (LTE/NR) | SINR (dB) | WiFi RSSI (dBm) | Ping (ms) | Android Level |
-|------|--------|-------------------|-----------|-----------------|-----------|---------------|
-| 优 (excellent) | `.excellent` (#4ade80) | ≥ -85 | ≥ 13 | ≥ -50 | < 30 | 4 (GREAT) |
-| 良 (good) | `.good` (#5dd4a3) | -95 ~ -85 | 5 ~ 13 | -65 ~ -50 | 30 ~ 80 | 3 (GOOD) |
-| 中 (warn) | `.warn` (#f0b056) | -105 ~ -95 | 0 ~ 5 | -75 ~ -65 | 80 ~ 150 | 2 (MODERATE) |
-| 差 (poor) | `.poor` (#ff8c69) | -115 ~ -105 | -5 ~ 0 | -85 ~ -75 | 150 ~ 300 | 1 (POOR) |
-| 无 (bad) | `.bad` (#ff6b7a) | < -115 | < -5 | < -85 | ≥ 300 | 0 (NONE) |
+| 等级 | 颜色类 | RSRP/dBm (LTE/NR) | SINR (dB) | WiFi RSSI (dBm) | Ping (ms) | Android Level (原始) |
+|------|--------|-------------------|-----------|-----------------|-----------|---------------------|
+| 优 (excellent) | `.excellent` (#4ade80) | ≥ -50 | ≥ 13 | ≥ -50 | < 30 | 4 (GREAT) |
+| 良 (good) | `.good` (#5dd4a3) | -67 ~ -50 | 5 ~ 13 | -65 ~ -50 | 30 ~ 80 | 3~4 (GOOD~GREAT) |
+| 中 (warn) | `.warn` (#f0b056) | -85 ~ -67 | 0 ~ 5 | -75 ~ -65 | 80 ~ 150 | 2~3 (MODERATE~GOOD) |
+| 差 (poor) | `.poor` (#ff8c69) | -100 ~ -85 | -5 ~ 0 | -85 ~ -75 | 150 ~ 300 | 1~2 (POOR~MODERATE) |
+| 无 (bad) | `.bad` (#ff6b7a) | < -100 | < -5 | < -85 | ≥ 300 | 0~1 (NONE~POOR) |
 
 `webroot/index.html` 中 `rsrpClass`/`sinrClass`/`rssiClass`/`levelClass`/`dbmClass`/`pingClass` 函数实现该分类。
+
+注意：前端 level 显示（如 "3/4"）由 `dbmToLevel()` 函数根据 dBm 值实时计算，不再依赖后端 Android Level 原始值。
 
 ---
 

@@ -822,7 +822,8 @@
             return;
           }
 
-          document.getElementById('net-type').textContent = data.net_type || '-';
+          var netTypeEl = document.getElementById('net-type');
+          if (netTypeEl) netTypeEl.textContent = data.net_type || '-';
           var badge = document.getElementById('net-badge');
           // 网络类型映射: 5G/4G/3G/2G/wifi/mobile/dual/none
           if (data.net_type === 'wifi') { badge.textContent = 'WiFi'; badge.className = 'badge ok'; }

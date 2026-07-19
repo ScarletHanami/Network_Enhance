@@ -30,7 +30,11 @@ se_ci_log() {
 # CI 调试模式检测 — 读取 module.prop version 字段，ci 开头则启用
 se_ci_detect() {
     local ver
-    ver=$(grep '^version=' "${MODDIR_ROOT:-.}/module.prop" 2>/dev/null | cut -d= -f2)
+    local moddir="${MODDIR_ROOT:-}"
+    if [ -z "$moddir" ]; then
+        moddir="$(se_resolve_moddir 2>/dev/null)" || return 0
+    fi
+    ver=$(grep '^version=' "$moddir/module.prop" 2>/dev/null | cut -d= -f2)
     if [ -n "$ver" ] && echo "$ver" | grep -q '^ci'; then
         SE_CI_LOGON=1
         export SE_CI_LOGON
@@ -41,8 +45,10 @@ se_ci_detect() {
 
 # 日志路径优先 /data/local/tmp（ADB 必写、稳定）
 SE_LOG_FILE="/data/local/tmp/Network_Enhance/network_enhance.log"
+mkdir -p "$(dirname "$SE_LOG_FILE")" 2>/dev/null
 if [ ! -w "$(dirname "$SE_LOG_FILE")" ] 2>/dev/null; then
     SE_LOG_FILE="/storage/emulated/0/Network_Enhance/network_enhance.log"
+    mkdir -p "$(dirname "$SE_LOG_FILE")" 2>/dev/null
 fi
 
 # 运行时文件（network_enhance 前缀统一）

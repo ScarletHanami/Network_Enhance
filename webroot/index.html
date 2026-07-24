@@ -12,7 +12,7 @@
 
   <div class="header">
     <h1>网络增强</h1>
-    <div class="ver"><span id="env-info">初始化...</span></div>
+    <div class="ver">v1.1.5 · <span id="env-info">初始化...</span></div>
   </div>
 
   <div class="api-banner" id="api-banner"></div>
@@ -1213,32 +1213,39 @@
     window.addEventListener('DOMContentLoaded', function () {
       diag('DOM 加载完成，开始初始化...');
 
-      waitApiReady(function (apiOk) {
-        if (!apiOk) {
-          diag('API 不可用，WebUI 功能受限', 'err');
-          setApiBanner('err', '✗ WebUI API 不可用。请：1. 重启 AxManager；2. 检查 WebView');
-          return;
-        }
+      // v1.1.5 优化: 首屏先渲染静态 UI，再异步初始化
+      // 给 DOM 一帧渲染时间，避免白屏
+      requestAnimationFrame(function () {
+        waitApiReady(function (apiOk) {
+          if (!apiOk) {
+            diag('API 不可用，WebUI 功能受限', 'err');
+            setApiBanner('err', '✗ WebUI API 不可用。请：1. 重启 AxManager；2. 检查 WebView');
+            return;
+          }
 
-        initModDir();
-        loadEnv();
+          initModDir();
+          loadEnv();
 
-        if (MODDIR) {
-          refreshAll();
-        } else {
-          diag('MODDIR 未获取到', 'err');
-          setApiBanner('warn', '⚠ MODDIR 探测失败，点击"重新诊断"');
-        }
+          if (MODDIR) {
+            // v1.1.5 优化: 延迟 100ms 再加载首次数据，确保 UI 已渲染
+            setTimeout(function () { refreshAll(); }, 100);
+          } else {
+            diag('MODDIR 未获取到', 'err');
+            setApiBanner('warn', '⚠ MODDIR 探测失败，点击"重新诊断"');
+          }
 
-        var intervals = [];
-        intervals.push(setInterval(loadNetworkInfo, 30000));
-        intervals.push(setInterval(loadMonitorStatus, 60000));
-        intervals.push(setInterval(loadWeaknetStatus, 60000));
+          // v1.1.5 优化: 降低轮询频率，减少 exec 调用
+          // networkInfo: 30s → 45s, monitorStatus: 60s → 90s, weaknetStatus: 60s → 90s
+          var intervals = [];
+          intervals.push(setInterval(loadNetworkInfo, 45000));
+          intervals.push(setInterval(loadMonitorStatus, 90000));
+          intervals.push(setInterval(loadWeaknetStatus, 90000));
 
-        window.addEventListener('beforeunload', function () {
-          intervals.forEach(function (id) { clearInterval(id); });
-          if (toast._timer) clearTimeout(toast._timer);
-          if (showAlert._timer) clearTimeout(showAlert._timer);
+          window.addEventListener('beforeunload', function () {
+            intervals.forEach(function (id) { clearInterval(id); });
+            if (toast._timer) clearTimeout(toast._timer);
+            if (showAlert._timer) clearTimeout(showAlert._timer);
+          });
         });
       });
     });

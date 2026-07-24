@@ -18,7 +18,7 @@
   <div class="api-banner" id="api-banner"></div>
 
   <details id="diag-panel">
-    <summary style="color:#f0b056">⚠ 诊断面板 (出现问题请展开查看)</summary>
+    <summary>⚠ 诊断面板 (出现问题请展开查看)</summary>
     <div class="card">
       <div class="card-title">
         <span>API 状态</span>
@@ -35,12 +35,13 @@
     <button class="btn primary" style="width:100%" onclick="refreshAll()">刷新全部状态</button>
   </div>
 
+  <!-- L1: 核心状态区 -->
   <div class="card">
     <div class="card-title">
       <span>网络状态</span>
       <span class="badge" id="net-badge">未检测</span>
     </div>
-    <div class="grid" id="net-grid">
+    <div class="grid">
       <div class="stat" style="grid-column:1/-1">
         <div class="stat-label">WiFi SSID</div>
         <div class="stat-value small" id="wifi-ssid">加载中</div>
@@ -50,6 +51,10 @@
         <div class="stat-value" id="wifi-rssi">加载中</div>
       </div>
       <div class="stat">
+        <div class="stat-label">公网延迟</div>
+        <div class="stat-value" id="net-ping">加载中</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">WiFi 链路速率</div>
         <div class="stat-value" id="wifi-speed">加载中</div>
       </div>
@@ -57,41 +62,46 @@
         <div class="stat-label">WiFi 频段</div>
         <div class="stat-value" id="wifi-freq">加载中</div>
       </div>
-      <div class="stat">
-        <div class="stat-label">公网延迟</div>
-        <div class="stat-value" id="net-ping">加载中</div>
-      </div>
-      <!-- <div class="stat">
+      <div class="stat" style="display:none">
         <div class="stat-label">网络类型</div>
         <div class="stat-value" id="net-type">加载中</div>
-      </div> -->
+      </div>
+    </div>
+  </div>
+
+  <!-- L1: SIM 卡状态 (双卡合并) -->
+  <div class="card">
+    <div class="card-title">
+      <span>SIM 卡状态</span>
+    </div>
+    <div class="grid">
       <div class="stat">
         <div class="stat-label">卡1 · 运营商</div>
         <div class="stat-value small" id="mobile-carrier-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 网络制式</div>
-        <div class="stat-value" id="mobile-rat-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 信号 Level</div>
-        <div class="stat-value" id="mobile-level-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 信号 dBm</div>
-        <div class="stat-value" id="mobile-dbm-1">加载中</div>
       </div>
       <div class="stat">
         <div class="stat-label">卡2 · 运营商</div>
         <div class="stat-value small" id="mobile-carrier-2">加载中</div>
       </div>
       <div class="stat">
+        <div class="stat-label">卡1 · 网络制式</div>
+        <div class="stat-value" id="mobile-rat-1">加载中</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">卡2 · 网络制式</div>
         <div class="stat-value" id="mobile-rat-2">加载中</div>
       </div>
       <div class="stat">
+        <div class="stat-label">卡1 · 信号 Level</div>
+        <div class="stat-value" id="mobile-level-1">加载中</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">卡2 · 信号 Level</div>
         <div class="stat-value" id="mobile-level-2">加载中</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">卡1 · 信号 dBm</div>
+        <div class="stat-value" id="mobile-dbm-1">加载中</div>
       </div>
       <div class="stat">
         <div class="stat-label">卡2 · 信号 dBm</div>
@@ -100,6 +110,7 @@
     </div>
   </div>
 
+  <!-- L2: 5G 信号质量 -->
   <div class="card">
     <div class="card-title">
       <span>5G 信号质量</span>
@@ -111,12 +122,12 @@
         <div class="stat-value" id="nr-rsrp">-</div>
       </div>
       <div class="stat">
-        <div class="stat-label">NR RSRQ (dB)</div>
-        <div class="stat-value" id="nr-rsrq">-</div>
-      </div>
-      <div class="stat">
         <div class="stat-label">NR SINR (dB)</div>
         <div class="stat-value" id="nr-sinr">-</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">NR RSRQ (dB)</div>
+        <div class="stat-value" id="nr-rsrq">-</div>
       </div>
       <div class="stat">
         <div class="stat-label">假满格判定</div>
@@ -126,49 +137,7 @@
     <div class="fake5g-warn" id="fake5g-warn">⚠ 检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
   </div>
 
-  <div class="card">
-    <div class="card-title">
-      <span>弱网自救</span>
-      <span class="badge" id="weaknet-badge">未知</span>
-    </div>
-    <div class="btn-grid">
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
-      <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')"
-        style="grid-column:1/-1">代理稳定模式</button>
-      <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')"
-        style="grid-column:1/-1">恢复默认优化</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">
-      <span>代理白名单管理</span>
-      <span class="badge" id="wl-badge">Data Saver</span>
-    </div>
-    <div style="font-size:10px;color:#6b7589;margin-bottom:6px">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
-    <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang"
-      style="width:100%;padding:8px;margin-bottom:6px;background:#0f1422;border:1px solid #1e2638;border-radius:4px;color:#e4e8f0;font-size:12px;font-family:inherit;box-sizing:border-box">
-    <div class="btn-grid">
-      <button class="btn success" onclick="addVpnWhitelist()">加入白名单</button>
-      <button class="btn warn" onclick="removeVpnWhitelist()">移出白名单</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">
-      <span>5G/LTE 制式管理</span>
-    </div>
-    <div class="btn-grid cols-3">
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
-      <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
-      <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
-    </div>
-    <div style="font-size:10px;color:#6b7589;margin-top:6px">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
-  </div>
-
+  <!-- L2: 智能调度器 -->
   <div class="card">
     <div class="card-title">
       <span>智能调度器</span>
@@ -194,36 +163,92 @@
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-title">
-      <span>Private DNS (DoT)</span>
-      <span class="badge" id="dns-badge">未知</span>
+  <!-- L3: 弱网自救 (可展开) -->
+  <details open>
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">弱网自救</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="card-title">
+        <span>场景模式</span>
+        <span class="badge" id="weaknet-badge">未知</span>
+      </div>
+      <div class="btn-grid">
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
+        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')" style="grid-column:1/-1">代理稳定模式</button>
+        <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')" style="grid-column:1/-1">恢复默认优化</button>
+      </div>
     </div>
-    <div style="font-size:11px;color:#8b95ad;margin-bottom:6px">模式: <span id="dns-mode">-</span> | 主机: <span
-        id="dns-spec">-</span></div>
-    <div class="btn-grid cols-3">
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on dnspod', 'DNSPod')">DNSPod</button>
-      <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh auto', '智能选择')">智能选择</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh off', '禁用DNS')">禁用</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh status', 'DNS状态')">状态</button>
-    </div>
-  </div>
+  </details>
 
-  <div class="card">
-    <div class="card-title"><span>WiFi / 运营商</span></div>
-    <div class="btn-grid">
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh apply', '应用运营商')">应用运营商</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh status', '运营商状态')">运营商状态</button>
-    </div>
-  </div>
-
+  <!-- L3: 代理白名单 -->
   <details>
-    <summary>维护 / 日志 / 自检</summary>
-    <div class="card">
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">代理白名单管理</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="card-title">
+        <span>Data Saver 白名单</span>
+        <span class="badge" id="wl-badge">Data Saver</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
+      <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang" style="margin-bottom:8px">
+      <div class="btn-grid">
+        <button class="btn success" onclick="addVpnWhitelist()">加入白名单</button>
+        <button class="btn danger" onclick="removeVpnWhitelist()">移出白名单</button>
+      </div>
+    </div>
+  </details>
+
+  <!-- L3: 5G/LTE 制式管理 -->
+  <details>
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">5G/LTE 制式管理</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="btn-grid cols-3">
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
+        <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
+        <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
+    </div>
+  </details>
+
+  <!-- L3: Private DNS -->
+  <details>
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">Private DNS (DoT)</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="card-title">
+        <span>DNS 状态</span>
+        <span class="badge" id="dns-badge">未知</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">模式: <span id="dns-mode">-</span> | 主机: <span id="dns-spec">-</span></div>
+      <div class="btn-grid cols-3">
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on dnspod', 'DNSPod')">DNSPod</button>
+        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh auto', '智能选择')">智能选择</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh off', '禁用DNS')">禁用</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh status', 'DNS状态')">状态</button>
+      </div>
+    </div>
+  </details>
+
+  <!-- L3: WiFi / 运营商 -->
+  <details>
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">WiFi / 运营商优化</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="btn-grid">
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh apply', '应用运营商')">应用运营商</button>
+        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh status', '运营商状态')">运营商状态</button>
+      </div>
+    </div>
+  </details>
+
+  <!-- L3: 维护 -->
+  <details>
+    <summary style="font-size:14px;font-weight:600;color:var(--text-primary);padding:4px 0">维护 / 日志 / 自检</summary>
+    <div class="card" style="margin-top:8px">
       <div class="btn-grid">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 26', '模块自检')">模块自检</button>
         <button class="btn danger" onclick="confirmReset()">一键还原</button>
@@ -234,7 +259,7 @@
     </div>
   </details>
 
-  <div class="footer">网络增强 v1.1.4 · MIT License · AxManager 免Root · 5G假满格自救版</div>
+  <div class="footer">网络增强 v1.1.5 · MIT License · AxManager 免Root · 5G假满格自救版</div>
   <div class="exec-indicator" id="exec-indicator">
     <div class="exec-bar"></div>
   </div>

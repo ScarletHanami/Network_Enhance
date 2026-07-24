@@ -5,6 +5,7 @@
 # 厂商探测
 # ----------------------------------------------------------------------
 se_detect_brand() {
+    se_ci_log "oem_compat.sh" "se_detect_brand: entry"
     local brand
     brand=$(getprop ro.product.brand 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')
     [ -z "$brand" ] && brand=$(getprop ro.product.vendor.brand 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')
@@ -21,9 +22,11 @@ se_detect_brand() {
         asus)                       echo "asus" ;;
         *)                          echo "${brand:-unknown}" ;;
     esac
+    se_ci_log "oem_compat.sh" "se_detect_brand: result=$brand"
 }
 
 se_detect_api() {
+    se_ci_log "oem_compat.sh" "se_detect_api: entry"
     local api
     api=$(getprop ro.build.version.sdk 2>/dev/null | head -1)
     [ -z "$api" ] && api=30
@@ -31,6 +34,7 @@ se_detect_api() {
 }
 
 se_detect_soc() {
+    se_ci_log "oem_compat.sh" "se_detect_soc: entry"
     local hw
     hw=$(getprop ro.hardware 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')
     case "$hw" in
@@ -50,6 +54,7 @@ se_detect_soc() {
 # 其他品牌: 已知 PNM 可用, 直接写入
 # 返回值: 0 = 需要写入验证, 1 = 不需要
 se_should_verify_write() {
+    se_ci_log "oem_compat.sh" "se_should_verify_write: entry"
     local brand="${SE_BRAND:-$(se_detect_brand)}"
     case "$brand" in
         huawei|honor)
@@ -71,6 +76,7 @@ se_should_verify_write() {
 # 华为/荣耀: PNM 可用, 但 5G NR 私有键跳过; 未知: 保守可用
 # 返回值: 0 = 支持, 1 = 不支持
 se_is_brand_supports_pnm() {
+    se_ci_log "oem_compat.sh" "se_is_brand_supports_pnm: entry"
     local brand="${SE_BRAND:-$(se_detect_brand)}"
     case "$brand" in
         oppo|oneplus|realme|xiaomi|redmi|poco)
@@ -101,6 +107,7 @@ se_is_brand_supports_pnm() {
 # 关键: 华为/荣耀的 preferred_network_mode 不跳过（S3 修正）,
 #   但 5G NR 私有键仍跳过（避免崩溃）
 se_key_supported() {
+    se_ci_log "oem_compat.sh" "se_key_supported: entry | key=$1"
     local key="$1"
     local brand="${SE_BRAND:-$(se_detect_brand)}"
     local api="${SE_API:-$(se_detect_api)}"
@@ -178,6 +185,7 @@ se_key_supported() {
 }
 
 se_key_replacement() {
+    se_ci_log "oem_compat.sh" "se_key_replacement: entry | key=$1"
     local key="$1"
     local brand="${SE_BRAND:-$(se_detect_brand)}"
 
@@ -197,6 +205,7 @@ se_key_replacement() {
 # 安全写入封装（含 OEM 兼容性过滤 + 键名替换）
 # ----------------------------------------------------------------------
 se_put_safe() {
+    se_ci_log "oem_compat.sh" "se_put_safe: entry | $1.$2=$3"
     local namespace="$1"
     local key="$2"
     local value="$3"
@@ -247,6 +256,7 @@ se_put_safe() {
 #   - 其他品牌: 走标准 OEM 过滤写入 (se_put)
 # 用法: se_put_safe_verify global preferred_network_mode 11
 se_put_safe_verify() {
+    se_ci_log "oem_compat.sh" "se_put_safe_verify: entry | $1.$2=$3"
     local namespace="$1"
     local key="$2"
     local value="$3"
@@ -317,6 +327,7 @@ se_clear_pnm_restricted() {
 # 厂商信息一次性探测
 # ----------------------------------------------------------------------
 se_probe_oem_env() {
+    se_ci_log "oem_compat.sh" "se_probe_oem_env: entry"
     SE_BRAND=$(se_detect_brand 2>/dev/null)
     SE_API=$(se_detect_api 2>/dev/null)
     SE_SOC=$(se_detect_soc 2>/dev/null)
@@ -334,6 +345,7 @@ se_probe_oem_env() {
 # 厂商信息展示（含 PNM 支持情况）
 # ----------------------------------------------------------------------
 se_show_oem_info() {
+    se_ci_log "oem_compat.sh" "se_show_oem_info: entry"
     echo "[OEM 兼容性信息]"
     echo "  品牌        : ${SE_BRAND:-未探测}"
     echo "  型号        : ${SE_MODEL:-未知}"

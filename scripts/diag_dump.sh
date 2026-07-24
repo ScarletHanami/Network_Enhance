@@ -7,16 +7,44 @@
 
 DIAG_FILE="/data/local/tmp/network_enhance_diag.txt"
 
+SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
+
 echo "=========================================="
 echo "  网络增强 诊断数据抓取"
 echo "=========================================="
 echo ""
+
+# 尝试加载 common.sh 以使用 se_ci_detect / se_ci_log
+_se_find_common() {
+    if [ -n "$SE_BOOTSTRAP_PWD" ] && [ -f "$SE_BOOTSTRAP_PWD/scripts/common.sh" ] 2>/dev/null; then
+        echo "$SE_BOOTSTRAP_PWD/scripts/common.sh"; return 0
+    fi
+    for _p in \
+        /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance \
+        /data/user_de/0/android/axeron/plugins/Network_Enhance \
+        /data/adb/modules/Network_Enhance; do
+        [ -f "$_p/scripts/common.sh" ] 2>/dev/null && { echo "$_p/scripts/common.sh"; return 0; }
+    done
+    return 1
+}
+_se_common=$(_se_find_common 2>/dev/null)
+if [ -n "$_se_common" ]; then
+    . "$_se_common" 2>/dev/null
+    se_ci_detect 2>/dev/null
+fi
+unset _se_common
+# 保留 _se_find_common 供后续 section 7 复用
+
+if [ "$(type -t se_ci_log 2>/dev/null)" = "function" ]; then
+    se_ci_log "diag_dump.sh" "diag_dump.sh 启动"
+fi
 
 # 清空旧日志
 > "$DIAG_FILE"
 
 log_section() {
     local title="$1"
+    se_ci_log "diag_dump.sh" "阶段: $title"
     echo ""
     echo "=========================================="
     echo "$title"
@@ -130,21 +158,8 @@ echo "private_dns_spec        = $(settings get global private_dns_spec)"
 # ===============================
 log_section "7. 模块当前解析结果（对照参考）"
 
-# 尝试加载 common.sh
-SE_BOOTSTRAP_PWD="$(pwd 2>/dev/null)"
-_se_find_common() {
-    if [ -n "$SE_BOOTSTRAP_PWD" ] && [ -f "$SE_BOOTSTRAP_PWD/scripts/common.sh" ] 2>/dev/null; then
-        echo "$SE_BOOTSTRAP_PWD/scripts/common.sh"; return 0
-    fi
-    for _p in \
-        /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance \
-        /data/user_de/0/android/axeron/plugins/Network_Enhance \
-        /data/adb/modules/Network_Enhance; do
-        [ -f "$_p/scripts/common.sh" ] 2>/dev/null && { echo "$_p/scripts/common.sh"; return 0; }
-    done
-    return 1
-}
-_se_common=$(_se_find_common)
+# 复用 bootstrap 阶段的 _se_find_common（已定义，含完整路径探测）
+_se_common=$(_se_find_common 2>/dev/null)
 if [ -n "$_se_common" ]; then
     . "$_se_common" 2>/dev/null
     echo "common.sh 路径: $_se_common"

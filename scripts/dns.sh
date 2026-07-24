@@ -26,7 +26,10 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
+
+se_ci_log "dns.sh" "dns.sh 启动 | cmd=$1 $2"
 
 # ----------------------------------------------------------------------
 # DoT 提供商列表
@@ -41,6 +44,7 @@ mopo dnshand.suning.com 苏宁DNS
 "
 
 get_provider_host() {
+    se_ci_log "dns.sh" "get_provider_host: entry | provider=$1"
     case "$1" in
         ali|alidns|阿里)         echo "dns.alidns.com" ;;
         tencent|腾讯|qq)         echo "dot.pub" ;;
@@ -48,7 +52,7 @@ get_provider_host() {
         adguard|adg)             echo "dns.adguard.com" ;;
         dnspod|pod)              echo "dns.pub" ;;
         mopo|mopohmt|suning)     echo "dnshand.suning.com" ;;
-        "")                      echo "$PRIVATE_DNS_HOST" ;;
+        "")                      echo "${PRIVATE_DNS_HOST:-dns.alidns.com}" ;;
         *)                       echo "$1" ;;
     esac
 }
@@ -58,6 +62,7 @@ get_provider_host() {
 # ----------------------------------------------------------------------
 # 返回: 最优提供商的主机名
 select_best_dot() {
+    se_ci_log "dns.sh" "select_best_dot: entry"
     echo "=== 智能 DNS 选择 (测试 6 家提供商延迟) ===" >&2
 
     if ! wait_network_ready 10; then
@@ -98,14 +103,15 @@ select_best_dot() {
 # DoT 端口可达性检查
 # ----------------------------------------------------------------------
 check_dot_reachable() {
+    se_ci_log "dns.sh" "check_dot_reachable: entry | host=$1"
     local host="$1"
     [ -z "$host" ] && host="$PRIVATE_DNS_HOST"
 
-    echo "自检: $host:853 (DoT 端口) ..."
+    echo "自检: ${host}:853 (DoT 端口) ..."
 
     if command -v nc >/dev/null 2>&1; then
         if nc -w 3 -z "$host" 853 2>/dev/null; then
-            echo "  [OK] nc 测试通过: $host:853 可达"
+            echo "  [OK] nc 测试通过: ${host}:853 可达"
             return 0
         else
             echo "  [--] nc 测试失败，尝试 ping 兜底"
@@ -125,6 +131,7 @@ check_dot_reachable() {
 # 启用 Private DNS（支持 auto 参数触发智能选择）
 # ----------------------------------------------------------------------
 enable_private_dns() {
+    se_ci_log "dns.sh" "enable_private_dns: entry | provider=$1"
     local host
 
     # auto 参数触发智能选择
@@ -195,6 +202,7 @@ enable_private_dns() {
 # 禁用 / 恢复默认
 # ----------------------------------------------------------------------
 disable_private_dns() {
+    se_ci_log "dns.sh" "disable_private_dns: entry"
     echo "=== 禁用 Private DNS ==="
     se_put global private_dns_mode "off"
     se_del global private_dns_spec
@@ -204,6 +212,7 @@ disable_private_dns() {
 }
 
 reset_private_dns() {
+    se_ci_log "dns.sh" "reset_private_dns: entry"
     echo "=== 恢复系统默认 ==="
     se_del global private_dns_mode
     se_del global private_dns_spec
@@ -217,6 +226,7 @@ reset_private_dns() {
 # 状态显示（含空值容错）
 # ----------------------------------------------------------------------
 show_status() {
+    se_ci_log "dns.sh" "show_status: entry"
     local mode spec
     mode=$(se_get global private_dns_mode)
     spec=$(se_get global private_dns_spec)
@@ -241,6 +251,7 @@ show_status() {
 }
 
 list_providers() {
+    se_ci_log "dns.sh" "list_providers: entry"
     echo "=== 可用 DoT 提供商 (6 家) ==="
     echo ""
     printf "%-10s %-25s %s\n" "名称" "主机" "说明"
@@ -253,15 +264,16 @@ list_providers() {
 }
 
 case "$1" in
-    on|enable)  enable_private_dns "$2" ;;
-    off|disable) disable_private_dns ;;
-    reset|default) reset_private_dns ;;
-    check|test) check_dot_reachable "$2" ;;
-    list|providers) list_providers ;;
+    on|enable)  se_ci_log "dns.sh" "cmd=on"; enable_private_dns "$2" ;;
+    off|disable) se_ci_log "dns.sh" "cmd=off"; disable_private_dns ;;
+    reset|default) se_ci_log "dns.sh" "cmd=reset"; reset_private_dns ;;
+    check|test) se_ci_log "dns.sh" "cmd=check"; check_dot_reachable "$2" ;;
+    list|providers) se_ci_log "dns.sh" "cmd=list"; list_providers ;;
     auto|best)  # 智能选择模式
+        se_ci_log "dns.sh" "cmd=auto"
         enable_private_dns "auto"
         ;;
-    status) show_status ;;
+    status) se_ci_log "dns.sh" "cmd=status"; show_status ;;
     *)
         echo "Private DNS (DoT) 工具 v${SE_VERSION}"
         echo ""

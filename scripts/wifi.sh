@@ -27,12 +27,16 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
+
+se_ci_log "wifi.sh" "wifi.sh 启动 | cmd=$1"
 
 # ----------------------------------------------------------------------
 # 应用 WiFi 优化（OEM 兼容性由 oem_compat.sh 过滤）
 # ----------------------------------------------------------------------
 apply_wifi() {
+    se_ci_log "wifi.sh" "apply_wifi: entry"
     [ "$ENABLE_WIFI_OPTIMIZE" = "true" ] || {
         echo "WiFi 优化已禁用 (config.sh: ENABLE_WIFI_OPTIMIZE=false)"
         return 0
@@ -50,13 +54,13 @@ apply_wifi() {
     se_put global wifi_suspend_optimizations_enabled 0
     echo "  [OK] wifi_suspend_optimizations_enabled = 0"
 
-    se_put global wifi_idle_ms "$WIFI_IDLE_MS"
+    se_put global wifi_idle_ms "${WIFI_IDLE_MS:-15000}"
     echo "  [OK] wifi_idle_ms = $WIFI_IDLE_MS"
 
     # 信号阈值
-    se_put global wifi_bad_rssi_threshold "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_2g "-$WIFI_BAD_RSSI"
-    se_put global wifi_bad_rssi_threshold_5g "-$WIFI_BAD_RSSI"
+    se_put global wifi_bad_rssi_threshold "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_2g "-${WIFI_BAD_RSSI:-88}"
+    se_put global wifi_bad_rssi_threshold_5g "-${WIFI_BAD_RSSI:-88}"
     echo "  [OK] wifi_bad_rssi_threshold = -$WIFI_BAD_RSSI dBm"
 
     # 网络评分
@@ -88,6 +92,7 @@ apply_wifi() {
 # 状态显示（含 5G 频段识别）
 # ----------------------------------------------------------------------
 show_wifi_status() {
+    se_ci_log "wifi.sh" "show_wifi_status: entry"
     echo "=== WiFi 设置状态 v${SE_VERSION} ==="
     echo ""
     echo "[扫描与漫游]"
@@ -138,7 +143,7 @@ show_wifi_status() {
 
     # 频段与链路速率显示（Android 14+ 支持）
     if se_is_android_14_plus; then
-        echo "  当前频段      : $(cmd wifi status 2>/dev/null | grep -i 'frequency' | head -1 | awk '{print $NF}')"
+        echo "  当前频段      : $(cmd wifi status 2>/dev/null | grep -i 'frequency' | grep -oE '[0-9]+' | head -1) MHz"
     fi
     return 0
 }
@@ -147,6 +152,7 @@ show_wifi_status() {
 # 还原 WiFi 设置
 # ----------------------------------------------------------------------
 reset_wifi() {
+    se_ci_log "wifi.sh" "reset_wifi: entry"
     echo "=== 还原 WiFi 设置 ==="
     se_put global wifi_scan_throttle_enabled 1
     se_put global wifi_framework_scan_interval_ms 30000
@@ -167,9 +173,9 @@ reset_wifi() {
 }
 
 case "$1" in
-    apply)   apply_wifi ;;
-    status)  show_wifi_status ;;
-    reset)   reset_wifi ;;
+    apply)   se_ci_log "wifi.sh" "cmd=apply"; apply_wifi ;;
+    status)  se_ci_log "wifi.sh" "cmd=status"; show_wifi_status ;;
+    reset)   se_ci_log "wifi.sh" "cmd=reset"; reset_wifi ;;
     *)
         echo "WiFi 优化工具 v${SE_VERSION}"
         echo "用法: sh wifi.sh <apply|status|reset>"

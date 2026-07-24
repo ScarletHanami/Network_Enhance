@@ -21,6 +21,7 @@ _se_find_common() {
         [ -f "$d/scripts/common.sh" ] 2>/dev/null && { echo "$d/scripts/common.sh"; return 0; }
         [ -f "$d/../scripts/common.sh" ] 2>/dev/null && { echo "$d/../scripts/common.sh"; return 0; }
     fi
+    local _p
     for _p in \
         /data/user_de/0/com.android.shell/axeron/plugins/Network_Enhance \
         /data/user_de/0/android/axeron/plugins/Network_Enhance \
@@ -31,12 +32,16 @@ _se_find_common() {
 }
 _se_common=$(_se_find_common) || { echo "[NE] common.sh 未找到" >&2; exit 0; }
 . "$_se_common"
-unset _se_common _se_find_common
+unset _se_common
+unset -f _se_find_common 2>/dev/null || true
+
+se_ci_log "network_info.sh" "network_info.sh 启动 | cmd=$1"
 
 # ----------------------------------------------------------------------
 # WiFi SSID: cmd wifi status 优先 (Android 14+), 失败时降级 dumpsys wifi 多模式解析
 # ----------------------------------------------------------------------
 get_wifi_ssid() {
+    se_ci_log "network_info.sh" "get_wifi_ssid: entry"
     local ssid=""
 
     # 优先使用 cmd wifi status (Android 14+)
@@ -67,8 +72,8 @@ get_wifi_ssid() {
     ssid=$(echo "$dump" | grep -oE 'SSID:"[^"]+"' 2>/dev/null | head -1 | sed 's/SSID:"//;s/"$//')
     [ -n "$ssid" ] && { echo "$ssid"; return 0; }
 
-    # 模式 3: "ChinaNet-C9D3-5G" 直接带引号的 SSID
-    ssid=$(echo "$dump" | grep -oE '"[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9]+"' 2>/dev/null | head -1 | tr -d '"')
+    # 模式 3: 引号内任意合法 SSID（放宽对中文、空格、特殊字符的支持）
+    ssid=$(echo "$dump" | grep -oE '"[^"]{1,32}"' 2>/dev/null | head -1 | tr -d '"')
     [ -n "$ssid" ] && { echo "$ssid"; return 0; }
 
     # 模式 4: mWifiInfo 行内 SSID:xxx (无引号)
@@ -89,6 +94,7 @@ get_wifi_ssid() {
 # WiFi RSSI: 包装 common.sh 的 se_get_wifi_rssi
 # ----------------------------------------------------------------------
 get_wifi_rssi() {
+    se_ci_log "network_info.sh" "get_wifi_rssi: entry"
     local rssi
     rssi=$(se_get_wifi_rssi)
     [ -z "$rssi" ] && rssi="?"
@@ -139,6 +145,7 @@ get_wifi_link_speed() {
 # 降级支持 mFrequency/frequency= 等旧格式
 # ----------------------------------------------------------------------
 get_wifi_frequency() {
+    se_ci_log "network_info.sh" "get_wifi_freq: entry"
     local freq=""
     local result=""
 
@@ -151,7 +158,7 @@ get_wifi_frequency() {
         esac
         if [ "$f" -ge 5925 ] && [ "$f" -le 7125 ] 2>/dev/null; then
             echo "6G"; return 0
-        elif [ "$f" -gt 4000 ] && [ "$f" -lt 5925 ] 2>/dev/null; then
+        elif [ "$f" -ge 4000 ] && [ "$f" -lt 5925 ] 2>/dev/null; then
             echo "5G"; return 0
         elif [ "$f" -ge 2000 ] && [ "$f" -le 3000 ] 2>/dev/null; then
             echo "2.4G"; return 0
@@ -193,14 +200,18 @@ get_wifi_frequency() {
 
 # ----------------------------------------------------------------------
 # 运营商信息
+# 双卡设备上 getprop gsm.sim.operator.alpha 返回逗号分隔：中国移动,中国联通
+# 卡1 取第一段，卡2 取第二段（或 .2 后缀属性）
 # ----------------------------------------------------------------------
 get_carrier_name() {
+    se_ci_log "network_info.sh" "get_carrier_name: entry"
     local name
     name=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
-    # 去逗号后判断空/Unknown（不插卡或无效卡时返回 "," 或 "")
-    name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
+    # 双卡设备返回逗号分隔，取第一段作为卡1
+    name=$(echo "$name" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
         name=$(getprop gsm.operator.alpha 2>/dev/null | head -1)
+        name=$(echo "$name" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -z "$name" ] || [ "$name" = "Unknown" ] || [ "$name" = "unknown" ]; then
             echo "无SIM"
             return 0
@@ -209,32 +220,153 @@ get_carrier_name() {
     echo "$name"
 }
 
+# ----------------------------------------------------------------------
+# 通用 RAT 编号 → 名称映射 (TelephonyManager NETWORK_TYPE_*)
+# 20=NR, 13=LTE, 19=LTE_CA, 3=UMTS, 8=HSDPA, 9=HSUPA, 10=HSPA, 15=HSPA+
+# 1=GPRS, 2=EDGE, 16=GSM, 17=TD_SCDMA, 4=CDMA, 5=EVDO_0, 6=EVDO_A, 12=EVDO_B
+# ----------------------------------------------------------------------
+_rat_number_to_name() {
+    case "$1" in
+        20)     echo "5G NR (20)"  ;;
+        19)     echo "4G LTE_CA (19)" ;;
+        13)     echo "4G LTE (13)" ;;
+        3|8|9|10|14|15|17) echo "3G ($1)" ;;
+        1|2|16) echo "2G ($1)" ;;
+        4|5|6|7|12) echo "3G ($1)" ;;  # CDMA/EvDo
+        18)     echo "IWLAN (18)" ;;
+        *)      echo "" ;;
+    esac
+}
+
+# 字符串制式 (getprop 返回值) → RAT 编号
+# getprop gsm.network.type 返回 "NR"/"LTE"/"HSPA"/"UMTS"/"EDGE"/"GPRS" 等
+_str_rat_to_number() {
+    case "$1" in
+        NR|nr|NR_SA|nr_sa|NR_NSA|nr_nsa)       echo "20" ;;
+        LTE|lte|LTE_CA|lte_ca)     echo "13" ;;
+        HSDPA|hsdpa)               echo "8" ;;
+        HSUPA|hsupa)               echo "9" ;;
+        HSPA|hspa)                 echo "10" ;;
+        HSPA+|hspa+)               echo "15" ;;
+        UMTS|umts)                 echo "3" ;;
+        TD_SCDMA|td_scdma)         echo "17" ;;
+        GPRS|gprs)                 echo "1" ;;
+        EDGE|edge)                 echo "2" ;;
+        GSM|gsm)                   echo "16" ;;
+        CDMA|cdma)                 echo "4" ;;
+        EVDO_0|evdo_0)             echo "5" ;;
+        EVDO_A|evdo_a)             echo "6" ;;
+        EVDO_B|evdo_b)             echo "12" ;;
+        IWLAN|iwlan)               echo "18" ;;
+        *)                         echo "" ;;
+    esac
+}
+
+# ----------------------------------------------------------------------
+# dumpsys telephony.registry 按 mPhoneId= 分块提取
+# 输出中每个卡槽对应一个 mPhoneId=N 块，N=0 是卡1，N=1 是卡2
+# 用 awk flag 模式精确匹配 phoneId 值，截取该块到下一个 mPhoneId= 之前
+# ----------------------------------------------------------------------
+_extract_slot1_block() {
+    se_dumpsys_cached telephony.registry 2>/dev/null \
+        | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null
+}
+
+_extract_slot2_block() {
+    se_dumpsys_cached telephony.registry 2>/dev/null \
+        | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null
+}
+
+# 从 dumpsys telephony.registry 提取卡1 (mPhoneId=0) 的实时网络制式编号
+# 优先级: 块内 mDataNetworkType → 全局 mDataNetworkType → 块内 mVoiceNetworkType → 全局 mVoiceNetworkType
+# 不优先取 mVoiceNetworkType，因为语音可能回落到 LTE，与实际数据制式 (NR) 不一致
+_get_rat_number() {
+    local reg block rat
+
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+
+    # 阶段 1: 块内 mDataNetworkType (mPhoneId=0 块)
+    if [ -n "$reg" ]; then
+        block=$(echo "$reg" | awk '/mPhoneId=0/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+        if [ -n "$block" ]; then
+            rat=$(echo "$block" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+            rat=$(echo "$block" | grep -oE 'mDataNetworkType: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+            rat=$(echo "$block" | grep -oE 'mNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+        fi
+    fi
+
+    # 阶段 2: 全局第一个 mDataNetworkType= (块失败或块内无此字段时)
+    if [ -n "$reg" ]; then
+        rat=$(echo "$reg" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+        rat=$(echo "$reg" | grep -oE 'mDataNetworkType: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+        rat=$(echo "$reg" | grep -oE 'mNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+    fi
+
+    # 阶段 3: 块内 mVoiceNetworkType (数据制式实在拿不到时才用语音)
+    if [ -n "$reg" ] && [ -n "$block" ]; then
+        rat=$(echo "$block" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+    fi
+
+    # 阶段 4: 全局第一个 mVoiceNetworkType (最后兜底)
+    if [ -n "$reg" ]; then
+        rat=$(echo "$reg" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+    fi
+
+    echo ""
+}
+
 get_network_type_name() {
+    se_ci_log "network_info.sh" "get_mobile_rat: entry"
+    local rat_num name
+    rat_num=$(_get_rat_number)
+    name=$(_rat_number_to_name "$rat_num")
+    [ -n "$name" ] && { echo "$name"; return 0; }
+
+    # Fallback: getprop gsm.network.type
     local rat
     rat=$(getprop gsm.network.type 2>/dev/null | head -1)
     if [ -z "$rat" ] || [ "$rat" = "Unknown" ] || [ "$rat" = "unknown" ] || [ "$rat" = "NR_SA,Unknown" ]; then
-        rat=$(getprop gsm.network.type 2>/dev/null | tr ',' '\n' | head -1)
+        rat=$(echo "$rat" | tr ',' '\n' | head -1)
         case "$rat" in
-            NR|nr)      echo "5G NR"; return 0 ;;
-            LTE|lte)    echo "4G LTE"; return 0 ;;
-            *)          ;;
+            NR_SA)  echo "5G SA (20)"; return 0 ;;
+            NR_NSA) echo "5G NSA (20)"; return 0 ;;
+            NR*)    echo "5G NR (20)"; return 0 ;;
+            LTE_CA) echo "4G LTE_CA (19)"; return 0 ;;
+            LTE*)   echo "4G LTE (13)"; return 0 ;;
+            *)      ;;
         esac
         echo "无"
         return 0
     fi
     rat=$(echo "$rat" | cut -d',' -f1)
     case "$rat" in
-        NR|nr)                  echo "5G NR" ;;
-        LTE|lte)                echo "4G LTE" ;;
-        HSDPA|HSUPA|HSPA|HSPA+) echo "3G HSPA" ;;
-        UMTS)                   echo "3G UMTS" ;;
-        EDGE)                   echo "2G EDGE" ;;
-        GPRS)                   echo "2G GPRS" ;;
+        NR_SA)                  echo "5G SA (20)" ;;
+        NR_NSA)                 echo "5G NSA (20)" ;;
+        NR*)                    echo "5G NR (20)" ;;
+        LTE_CA)                 echo "4G LTE_CA (19)" ;;
+        LTE*)                   echo "4G LTE (13)" ;;
+        HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat"))" ;;
+        UMTS)                   echo "3G UMTS (3)" ;;
+        EDGE)                   echo "2G EDGE (2)" ;;
+        GPRS)                   echo "2G GPRS (1)" ;;
         *)                      echo "${rat:-无}" ;;
     esac
 }
 
 get_mobile_level() {
+    se_ci_log "network_info.sh" "get_mobile_level: entry"
     local level
     level=$(se_get_mobile_level)
     [ -z "$level" ] && level="无"
@@ -242,10 +374,218 @@ get_mobile_level() {
 }
 
 get_mobile_dbm() {
+    se_ci_log "network_info.sh" "get_mobile_dbm: entry"
     local dbm
     dbm=$(se_get_mobile_dbm)
     [ -z "$dbm" ] && dbm="无"
     echo "$dbm"
+}
+
+# ----------------------------------------------------------------------
+# 卡2 信息采集（双卡设备）
+# dumpsys telephony.registry 中每个 mPhoneId=N 块对应一个卡槽
+# 卡2 = mPhoneId=1 块，通过 _extract_slot2_block() 提取
+# ----------------------------------------------------------------------
+
+_get_rat_number_2() {
+    local reg block rat prop_main prop_2 rat2_str
+
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+
+    # === 阶段 A: dumpsys 分块提取 (mPhoneId=1 块) ===
+    if [ -n "$reg" ]; then
+        block=$(echo "$reg" | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+        if [ -n "$block" ]; then
+            rat=$(echo "$block" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+            rat=$(echo "$block" | grep -oE 'mDataNetworkType: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+            rat=$(echo "$block" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+            # 部分 ROM 字段名变体
+            rat=$(echo "$block" | grep -oE 'mNetworkType=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+        fi
+    fi
+
+    # === 阶段 B: 全局第 2 个匹配项 (分块失败的兜底) ===
+    if [ -n "$reg" ]; then
+        rat=$(echo "$reg" | grep -oE 'mDataNetworkType=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+        rat=$(echo "$reg" | grep -oE 'mDataNetworkType: [0-9]+' 2>/dev/null | sed -n '2p' | awk '{print $2}')
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+        rat=$(echo "$reg" | grep -oE 'mVoiceNetworkType=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+
+        rat=$(echo "$reg" | grep -oE 'mNetworkType=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
+        [ -n "$rat" ] && [ "$rat" != "0" ] && { echo "$rat"; return 0; }
+    fi
+
+    # === 阶段 C: getprop gsm.network.type.2 后缀属性 (全制式支持) ===
+    prop_2=$(getprop gsm.network.type.2 2>/dev/null | head -1 | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    rat=$(_str_rat_to_number "$prop_2")
+    [ -n "$rat" ] && { echo "$rat"; return 0; }
+
+    # === 阶段 D: 从 gsm.network.type 主属性按逗号拆分取第二段 (与运营商拆分一致) ===
+    prop_main=$(getprop gsm.network.type 2>/dev/null | head -1)
+    if [ -n "$prop_main" ] && echo "$prop_main" | grep -q ','; then
+        rat2_str=$(echo "$prop_main" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        rat=$(_str_rat_to_number "$rat2_str")
+        [ -n "$rat" ] && { echo "$rat"; return 0; }
+    fi
+
+    echo ""
+}
+
+get_network_type_name_2() {
+    local rat_num name rat prop_main rat2_str
+
+    rat_num=$(_get_rat_number_2)
+    name=$(_rat_number_to_name "$rat_num")
+    [ -n "$name" ] && { echo "$name"; return 0; }
+
+    # Fallback 1: getprop gsm.network.type.2 后缀属性 (字符串)
+    rat=$(getprop gsm.network.type.2 2>/dev/null | head -1)
+    if [ -n "$rat" ] && [ "$rat" != "Unknown" ] && [ "$rat" != "unknown" ]; then
+        rat=$(echo "$rat" | cut -d',' -f1)
+        case "$rat" in
+            NR_SA)                  echo "5G SA (20)"; return 0 ;;
+            NR_NSA)                 echo "5G NSA (20)"; return 0 ;;
+            NR*)                    echo "5G NR (20)"; return 0 ;;
+            LTE_CA)                 echo "4G LTE_CA (19)"; return 0 ;;
+            LTE*)                   echo "4G LTE (13)"; return 0 ;;
+            HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat"))"; return 0 ;;
+            UMTS)                   echo "3G UMTS (3)"; return 0 ;;
+            EDGE)                   echo "2G EDGE (2)"; return 0 ;;
+            GPRS)                   echo "2G GPRS (1)"; return 0 ;;
+            *)                      ;;
+        esac
+    fi
+
+    # Fallback 2: 从 gsm.network.type 主属性按逗号拆分取第二段 (无 .2 后缀的 ROM)
+    prop_main=$(getprop gsm.network.type 2>/dev/null | head -1)
+    if [ -n "$prop_main" ] && echo "$prop_main" | grep -q ','; then
+        rat2_str=$(echo "$prop_main" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [ -n "$rat2_str" ] && [ "$rat2_str" != "Unknown" ] && [ "$rat2_str" != "unknown" ]; then
+            case "$rat2_str" in
+                NR_SA)                  echo "5G SA (20)"; return 0 ;;
+                NR_NSA)                 echo "5G NSA (20)"; return 0 ;;
+                NR*)                    echo "5G NR (20)"; return 0 ;;
+                LTE_CA)                 echo "4G LTE_CA (19)"; return 0 ;;
+                LTE*)                   echo "4G LTE (13)"; return 0 ;;
+                HSDPA|HSUPA|HSPA|HSPA+*) echo "3G HSPA ($(_str_rat_to_number "$rat2_str"))"; return 0 ;;
+                UMTS)                   echo "3G UMTS (3)"; return 0 ;;
+                EDGE)                   echo "2G EDGE (2)"; return 0 ;;
+                GPRS)                   echo "2G GPRS (1)"; return 0 ;;
+                *)                      ;;
+            esac
+        fi
+    fi
+
+    echo ""
+}
+
+get_carrier_name_2() {
+    local name
+    # 优先从主属性逗号分隔中取第二段（部分 ROM 不提供 .2 后缀）
+    name=$(getprop gsm.sim.operator.alpha 2>/dev/null | head -1)
+    [ -n "$name" ] && name=$(echo "$name" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
+    fi
+    # 无逗号或取失败 → 回退到 .2 后缀属性
+    name=$(getprop gsm.sim.operator.alpha.2 2>/dev/null | head -1)
+    name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
+    fi
+    name=$(getprop gsm.operator.alpha.2 2>/dev/null | head -1)
+    name=$(echo "$name" | sed 's/,[[:space:]]*$//;s/^[[:space:],]*//')
+    if [ -n "$name" ] && [ "$name" != "Unknown" ] && [ "$name" != "unknown" ]; then
+        echo "$name"; return 0
+    fi
+    echo ""
+}
+
+get_mobile_dbm_2() {
+    local reg block dbm
+
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+
+    # === 阶段 A: dumpsys 分块提取 (mPhoneId=1 块) ===
+    if [ -n "$reg" ]; then
+        block=$(echo "$reg" | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+        if [ -n "$block" ]; then
+            dbm=$(echo "$block" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+            dbm=$(echo "$block" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+            [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+            dbm=$(echo "$block" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+            [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+            dbm=$(echo "$block" | grep 'mSignalStrength' 2>/dev/null | head -1 | grep -oE '[-][0-9]+' | head -1)
+            [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
+        fi
+    fi
+
+    # === 阶段 B: 全局第 2 个匹配项 (分块失败的兜底) ===
+    if [ -n "$reg" ]; then
+        dbm=$(echo "$reg" | grep -oE 'mDbm=[-]?[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$reg" | grep -oE 'dbm = -?[0-9]+' 2>/dev/null | sed -n '2p' | sed 's/.*= *//')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$reg" | grep -oE 'mDbm: [-]?[0-9]+' 2>/dev/null | sed -n '2p' | awk '{print $2}')
+        [ -n "$dbm" ] && [ "$dbm" != "2147483647" ] && { echo "$dbm"; return 0; }
+
+        dbm=$(echo "$reg" | grep 'mSignalStrength' 2>/dev/null | sed -n '2p' | grep -oE '[-][0-9]+' | head -1)
+        [ -n "$dbm" ] && [ "$dbm" != "-2147483647" ] && { echo "$dbm"; return 0; }
+    fi
+
+    echo ""
+}
+
+get_mobile_level_2() {
+    local reg block level
+
+    reg=$(se_dumpsys_cached telephony.registry 2>/dev/null)
+
+    # === 阶段 A: dumpsys 分块提取 (mPhoneId=1 块) ===
+    if [ -n "$reg" ]; then
+        block=$(echo "$reg" | awk '/mPhoneId=1/{flag=1; next} /mPhoneId=/{flag=0} flag' 2>/dev/null)
+        if [ -n "$block" ]; then
+            level=$(echo "$block" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
+            [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+            level=$(echo "$block" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | head -1 | awk '{print $2}')
+            [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+            level=$(echo "$block" | grep -oE 'level = [0-9]+' 2>/dev/null | head -1 | sed 's/.*= *//')
+            [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+        fi
+    fi
+
+    # === 阶段 B: 全局第 2 个匹配项 (分块失败的兜底) ===
+    if [ -n "$reg" ]; then
+        level=$(echo "$reg" | grep -oE 'mLevel=[0-9]+' 2>/dev/null | sed -n '2p' | cut -d= -f2)
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$reg" | grep -oE 'mLevel: [0-9]+' 2>/dev/null | sed -n '2p' | awk '{print $2}')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+
+        level=$(echo "$reg" | grep -oE 'level = [0-9]+' 2>/dev/null | sed -n '2p' | sed 's/.*= *//')
+        [ -n "$level" ] && [ "$level" != "2147483647" ] && { echo "$level"; return 0; }
+    fi
+
+    echo ""
 }
 
 get_ping_ms() {
@@ -351,7 +691,7 @@ show_full_status() {
     echo ""
 
     case "$net_type" in
-        wifi|dual)
+        wifi)
             echo "[WiFi]"
             echo "  SSID     : $(get_wifi_ssid)"
             echo "  RSSI     : $(get_wifi_rssi) dBm"
@@ -362,12 +702,25 @@ show_full_status() {
     esac
 
     case "$net_type" in
-        mobile|dual)
+        5G|4G|3G|2G)
             echo "[移动网络]"
-            echo "  运营商   : $(get_carrier_name)"
-            echo "  网络制式 : $(get_network_type_name)"
-            echo "  Level    : $(get_mobile_level)/4"
-            echo "  dBm      : $(get_mobile_dbm) dBm"
+            echo "  卡1"
+            echo "    运营商   : $(get_carrier_name)"
+            echo "    网络制式 : $(get_network_type_name)"
+            echo "    Level    : $(get_mobile_level)/4"
+            echo "    dBm      : $(get_mobile_dbm) dBm"
+            local carrier2 rat2 level2 dbm2
+            carrier2=$(get_carrier_name_2)
+            if [ -n "$carrier2" ]; then
+                rat2=$(get_network_type_name_2)
+                level2=$(get_mobile_level_2)
+                dbm2=$(get_mobile_dbm_2)
+                echo "  卡2"
+                echo "    运营商   : ${carrier2}"
+                echo "    网络制式 : ${rat2:-无}"
+                echo "    Level    : ${level2:-无}/4"
+                echo "    dBm      : ${dbm2:-无} dBm"
+            fi
             echo ""
             ;;
     esac
@@ -408,11 +761,12 @@ show_brief() {
         wifi)
             echo "WiFi $(get_wifi_ssid) | $(get_wifi_rssi)dBm | $(get_wifi_link_speed)Mbps | 延迟$(get_ping_ms)ms"
             ;;
-        mobile)
-            echo "$(get_carrier_name) $(get_network_type_name) | Lv$(get_mobile_level)/4 $(get_mobile_dbm)dBm | RSRP$(get_nr_rsrp) | 延迟$(get_ping_ms)ms"
-            ;;
-        dual)
-            echo "双通道 WiFi $(get_wifi_rssi)dBm + 移动 Lv$(get_mobile_level)/4 | RSRP$(get_nr_rsrp) | 延迟$(get_ping_ms)ms"
+        5G|4G|3G|2G)
+            echo "$(get_carrier_name) $(get_network_type_name) | Lv$(get_mobile_level)/4 $(get_mobile_dbm)dBm"
+            local c2
+            c2=$(get_carrier_name_2)
+            [ -n "$c2" ] && echo " 卡2: $c2 $(get_network_type_name_2) | Lv$(get_mobile_level_2)/4 $(get_mobile_dbm_2)dBm"
+            echo "RSRP$(get_nr_rsrp) | 延迟$(get_ping_ms)ms"
             ;;
         none)
             echo "无网络连接"
@@ -429,15 +783,12 @@ show_multiline() {
             echo "信号: $(get_wifi_rssi) dBm | 链路: $(get_wifi_link_speed) Mbps"
             echo "延迟: $(get_ping_ms) ms"
             ;;
-        mobile)
+        5G|4G|3G|2G)
             echo "$(get_carrier_name) $(get_network_type_name)"
             echo "信号: Lv$(get_mobile_level)/4 | $(get_mobile_dbm) dBm"
-            echo "5G : RSRP $(get_nr_rsrp) | SINR $(get_nr_sinr) dB"
-            echo "延迟: $(get_ping_ms) ms"
-            ;;
-        dual)
-            echo "WiFi: $(get_wifi_ssid) $(get_wifi_rssi)dBm $(get_wifi_link_speed)Mbps"
-            echo "移动: $(get_carrier_name) $(get_network_type_name) Lv$(get_mobile_level)/4 $(get_mobile_dbm)dBm"
+            local c2m
+            c2m=$(get_carrier_name_2)
+            [ -n "$c2m" ] && echo "卡2: $c2m $(get_network_type_name_2) | Lv$(get_mobile_level_2)/4 $(get_mobile_dbm_2)dBm"
             echo "5G : RSRP $(get_nr_rsrp) | SINR $(get_nr_sinr) dB"
             echo "延迟: $(get_ping_ms) ms"
             ;;
@@ -453,7 +804,10 @@ show_multiline() {
 # ----------------------------------------------------------------------
 json_escape() {
     local s="$1"
-    s=$(printf '%s' "$s" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r/\\r/g' | tr '\n' '\f' | sed 's/\f/\\n/g')
+    local tab cr
+    tab=$(printf '\t')
+    cr=$(printf '\r')
+    s=$(printf '%s' "$s" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$tab/\\\\t/g" -e "s/$cr/\\\\r/g" | tr '\n' '\f' | sed 's/\f/\\n/g')
     printf '%s' "$s"
 }
 
@@ -461,7 +815,11 @@ json_escape() {
 # JSON 输出（含 nr / preferred_network_mode / fake_5g 等字段供 WebUI 使用）
 # ----------------------------------------------------------------------
 show_json() {
-    local net_type ssid rssi speed freq carrier rat level dbm ping_ms nr_rsrp nr_sinr nr_rsrq fake_5g pnm_mode
+    se_ci_log "network_info.sh" "JSON 输出开始"
+    local net_type ssid rssi speed freq
+    local carrier1 rat1 level1 dbm1
+    local carrier2 rat2 level2 dbm2
+    local ping_ms nr_rsrp nr_sinr nr_rsrq fake_5g pnm_mode
 
     net_type=$(se_detect_network_type 2>/dev/null)
     [ -z "$net_type" ] && net_type="none"
@@ -478,17 +836,31 @@ show_json() {
     freq=$(get_wifi_frequency 2>/dev/null)
     [ -z "$freq" ] && freq="?"
 
-    carrier=$(get_carrier_name 2>/dev/null)
-    [ -z "$carrier" ] && carrier="无SIM"
+    # 卡1
+    carrier1=$(get_carrier_name 2>/dev/null)
+    [ -z "$carrier1" ] && carrier1="无SIM"
 
-    rat=$(get_network_type_name 2>/dev/null)
-    [ -z "$rat" ] && rat="无"
+    rat1=$(get_network_type_name 2>/dev/null)
+    [ -z "$rat1" ] && rat1="无"
 
-    level=$(get_mobile_level 2>/dev/null)
-    [ -z "$level" ] && level="无"
+    level1=$(get_mobile_level 2>/dev/null)
+    [ -z "$level1" ] && level1="无"
 
-    dbm=$(get_mobile_dbm 2>/dev/null)
-    [ -z "$dbm" ] && dbm="无"
+    dbm1=$(get_mobile_dbm 2>/dev/null)
+    [ -z "$dbm1" ] && dbm1="无"
+
+    # 卡2
+    carrier2=$(get_carrier_name_2 2>/dev/null)
+    [ -z "$carrier2" ] && carrier2=""
+
+    rat2=$(get_network_type_name_2 2>/dev/null)
+    [ -z "$rat2" ] && rat2=""
+
+    level2=$(get_mobile_level_2 2>/dev/null)
+    [ -z "$level2" ] && level2=""
+
+    dbm2=$(get_mobile_dbm_2 2>/dev/null)
+    [ -z "$dbm2" ] && dbm2=""
 
     ping_ms=$(se_get_ping_ms 2>/dev/null)
     [ -z "$ping_ms" ] && ping_ms="?"
@@ -511,7 +883,7 @@ show_json() {
 
     # 从状态文件读取 5G 降级状态, 文件不存在或字段缺失时默认 "0"
     local state_fake_5g
-    state_fake_5g=$(cat "$SE_STATE_FILE" 2>/dev/null | grep '^FAKE_5G_ACTIVE=' 2>/dev/null | cut -d= -f2)
+    state_fake_5g=$(grep '^FAKE_5G_ACTIVE=' "${SE_STATE_FILE:-/dev/null}" 2>/dev/null | cut -d= -f2)
     case "$state_fake_5g" in
         1) state_fake_5g="1" ;;
         *) state_fake_5g="0" ;;  # 空值/0/异常值统一为 "0"
@@ -529,11 +901,17 @@ show_json() {
     echo "    \"link_speed\": \"$(json_escape "$speed")\","
     echo "    \"frequency\": \"$(json_escape "$freq")\""
     echo "  },"
-    echo "  \"mobile\": {"
-    echo "    \"carrier\": \"$(json_escape "$carrier")\","
-    echo "    \"rat\": \"$(json_escape "$rat")\","
-    echo "    \"level\": \"$(json_escape "$level")\","
-    echo "    \"dbm\": \"$(json_escape "$dbm")\""
+    echo "  \"mobile1\": {"
+    echo "    \"carrier\": \"$(json_escape "$carrier1")\","
+    echo "    \"rat\": \"$(json_escape "$rat1")\","
+    echo "    \"level\": \"$(json_escape "$level1")\","
+    echo "    \"dbm\": \"$(json_escape "$dbm1")\""
+    echo "  },"
+    echo "  \"mobile2\": {"
+    echo "    \"carrier\": \"$(json_escape "$carrier2")\","
+    echo "    \"rat\": \"$(json_escape "$rat2")\","
+    echo "    \"level\": \"$(json_escape "$level2")\","
+    echo "    \"dbm\": \"$(json_escape "$dbm2")\""
     echo "  },"
     echo "  \"nr\": {"
     echo "    \"rsrp\": \"$(json_escape "$nr_rsrp")\","
@@ -548,28 +926,42 @@ show_json() {
 }
 
 case "$1" in
-    brief)     show_brief ;;
-    multiline) show_multiline ;;
-    full|"")   show_full_status ;;
+    brief)     se_ci_log "network_info.sh" "cmd=brief"; show_brief ;;
+    multiline) se_ci_log "network_info.sh" "cmd=multiline"; show_multiline ;;
+    full|"")   se_ci_log "network_info.sh" "cmd=full"; show_full_status ;;
     wifi)
+        se_ci_log "network_info.sh" "cmd=wifi"
         echo "SSID: $(get_wifi_ssid)"
         echo "RSSI: $(get_wifi_rssi) dBm"
         echo "LinkSpeed: $(get_wifi_link_speed) Mbps"
         echo "Freq: $(get_wifi_frequency)"
         ;;
     mobile)
-        echo "Carrier: $(get_carrier_name)"
-        echo "RAT: $(get_network_type_name)"
-        echo "Level: $(get_mobile_level)/4"
-        echo "dBm: $(get_mobile_dbm)"
+        se_ci_log "network_info.sh" "cmd=mobile"
+        echo "卡1"
+        echo "  Carrier: $(get_carrier_name)"
+        echo "  RAT: $(get_network_type_name)"
+        echo "  Level: $(get_mobile_level)/4"
+        echo "  dBm: $(get_mobile_dbm)"
+        local c2cmd
+        c2cmd=$(get_carrier_name_2)
+        if [ -n "$c2cmd" ]; then
+            echo "卡2"
+            echo "  Carrier: $c2cmd"
+            echo "  RAT: $(get_network_type_name_2)"
+            echo "  Level: $(get_mobile_level_2)/4"
+            echo "  dBm: $(get_mobile_dbm_2)"
+        fi
         ;;
     nr)
+        se_ci_log "network_info.sh" "cmd=nr"
         echo "NR RSRP: $(get_nr_rsrp) dBm"
         echo "NR RSRQ: $(get_nr_rsrq) dB"
         echo "NR SINR: $(get_nr_sinr) dB"
         echo "Fake5G: $(get_fake_5g_status)"
         ;;
     speed)
+        se_ci_log "network_info.sh" "cmd=speed"
         local_speed=$(get_realtime_speed "$2")
         rx_kbps=$(echo "$local_speed" | awk '{print $1}')
         tx_kbps=$(echo "$local_speed" | awk '{print $2}')
@@ -578,10 +970,11 @@ case "$1" in
         echo "下行: $(format_speed "$rx_kbps")"
         echo "上行: $(format_speed "$tx_kbps")"
         ;;
-    json)  show_json ;;
-    type)  se_detect_network_type ;;
-    ping)  echo "$(se_get_ping_ms) ms" ;;
+    json)  se_ci_log "network_info.sh" "cmd=json"; show_json ;;
+    type)  se_ci_log "network_info.sh" "cmd=type"; se_detect_network_type ;;
+    ping)  se_ci_log "network_info.sh" "cmd=ping"; echo "$(se_get_ping_ms) ms" ;;
     dynamic)
+        se_ci_log "network_info.sh" "cmd=dynamic"
         net_type=$(se_detect_network_type)
         rssi=$(se_get_wifi_rssi)
         dbm=$(se_get_mobile_dbm)
@@ -612,6 +1005,7 @@ case "$1" in
         echo "PARAMS=$params"
         ;;
     quality)
+        se_ci_log "network_info.sh" "cmd=quality"
         net_type=$(se_detect_network_type)
         rssi=$(se_get_wifi_rssi)
         dbm=$(se_get_mobile_dbm)
@@ -646,10 +1040,9 @@ case "$1" in
         echo "NR_SCORE=$nr_score"
         echo "PING_SCORE=$ping_score"
         case "$net_type" in
-            wifi)   overall_score="$wifi_score" ;;
-            mobile) overall_score="$mobile_score" ;;
-            dual)   overall_score=$(awk -v w="$wifi_score" -v m="$mobile_score" 'BEGIN { printf "%d", (w + m) / 2 }') ;;
-            *)      overall_score=0 ;;
+            wifi)       overall_score="$wifi_score" ;;
+            5G|4G|3G|2G) overall_score="$mobile_score" ;;
+            *)          overall_score=0 ;;
         esac
         if [ "$ping_score" -gt 0 ] 2>/dev/null; then
             overall_score=$(awk -v o="$overall_score" -v p="$ping_score" 'BEGIN { printf "%d", (o * 0.6 + p * 0.4) }')

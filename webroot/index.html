@@ -34,8 +34,6 @@
   <div style="margin:8px 0">
     <button class="btn primary" style="width:100%" onclick="refreshAll()">刷新全部状态</button>
   </div>
-
-  <!-- L1: 核心状态区 -->
   <div class="card">
     <div class="card-title">
       <span>网络状态</span>
@@ -268,7 +266,7 @@
   <div class="exec-label" id="exec-label"><span class="exec-label-spinner"></span><span id="exec-label-text">执行中</span>
   </div>
   <div class="toast" id="toast"></div>
-  <div class="alert-box" id="alert-box"><span class="close" onclick="hideAlert()">×</span>
+  <div class="alert-box" id="alert-box"><button class="close-btn" style="position:relative;width:32px;height:32px;bottom:auto;right:auto;font-size:16px" onclick="hideAlert()">×</button>
     <div id="alert-content"></div>
   </div>
 

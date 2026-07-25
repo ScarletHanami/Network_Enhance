@@ -22,17 +22,17 @@
     <div class="card">
       <div class="card-title">
         <span>API 状态</span>
-        <button class="btn" style="padding:4px 8px;font-size:11px" onclick="runDiagnostics()">重新诊断</button>
+        <button class="btn btn-sm" onclick="runDiagnostics()">重新诊断</button>
       </div>
       <div class="diag wifi-raw" id="diag-output">等待诊断...</div>
-      <div style="margin-top:8px">
-        <button class="btn warn" style="width:100%" onclick="testExec()">测试 exec</button>
+      <div class="btn-grid" style="grid-template-columns:1fr;margin-top:12px">
+        <button class="btn warn" onclick="testExec()">测试 exec</button>
       </div>
     </div>
   </details>
 
-  <div style="margin:8px 0">
-    <button class="btn primary" style="width:100%" onclick="refreshAll()">刷新全部状态</button>
+  <div class="btn-grid" style="grid-template-columns:1fr;margin-bottom:16px">
+    <button class="btn primary" onclick="refreshAll()">刷新全部状态</button>
   </div>
   <div class="card">
     <div class="card-title">
@@ -40,7 +40,7 @@
       <span class="badge" id="net-badge">未检测</span>
     </div>
     <div class="grid">
-      <div class="stat" style="grid-column:1/-1">
+      <div class="stat stat-span2">
         <div class="stat-label">WiFi SSID</div>
         <div class="stat-value small" id="wifi-ssid">加载中</div>
       </div>
@@ -60,7 +60,7 @@
         <div class="stat-label">WiFi 频段</div>
         <div class="stat-value" id="wifi-freq">加载中</div>
       </div>
-      <div class="stat" style="display:none">
+      <div class="stat stat-hidden">
         <div class="stat-label">网络类型</div>
         <div class="stat-value" id="net-type">加载中</div>
       </div>
@@ -132,7 +132,7 @@
         <div class="stat-value" id="fake5g-status">-</div>
       </div>
     </div>
-    <div class="fake5g-warn" id="fake5g-warn">⚠ 检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
+    <div class="fake5g-warn" id="fake5g-warn">检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
   </div>
 
   <!-- L2: 智能调度器 -->
@@ -164,7 +164,7 @@
   <!-- L3: 弱网自救 (可展开) -->
   <details open>
     <summary>弱网自救</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="card-title">
         <span>场景模式</span>
         <span class="badge" id="weaknet-badge">未知</span>
@@ -175,7 +175,7 @@
         <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
         <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
       </div>
-      <div style="margin-top:10px">
+      <div class="action-stack">
         <button class="action-bar accent" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')">代理稳定模式</button>
         <button class="action-bar" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')">恢复默认优化</button>
       </div>
@@ -185,12 +185,12 @@
   <!-- L3: 代理白名单 -->
   <details>
     <summary>代理白名单管理</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="card-title">
         <span>Data Saver 白名单</span>
         <span class="badge" id="wl-badge">Data Saver</span>
       </div>
-      <div>代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
+      <div class="hint-text">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
       <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang">
       <div class="btn-grid">
         <button class="btn success" onclick="addVpnWhitelist()">加入白名单</button>
@@ -202,25 +202,25 @@
   <!-- L3: 5G/LTE 制式管理 -->
   <details>
     <summary>5G/LTE 制式管理</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="btn-grid cols-3">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
         <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
         <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
       </div>
-      <div>锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
+      <div class="hint-text">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
     </div>
   </details>
 
   <!-- L3: Private DNS -->
   <details>
     <summary>Private DNS (DoT)</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="card-title">
         <span>DNS 状态</span>
         <span class="badge" id="dns-badge">未知</span>
       </div>
-      <div>模式: <span id="dns-mode">-</span> | 主机: <span id="dns-spec">-</span></div>
+      <div class="hint-text">模式: <span id="dns-mode">-</span> | 主机: <span id="dns-spec">-</span></div>
       <div class="btn-grid cols-3">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
@@ -235,7 +235,7 @@
   <!-- L3: WiFi / 运营商 -->
   <details>
     <summary>WiFi / 运营商优化</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="btn-grid">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
@@ -248,14 +248,14 @@
   <!-- L3: 维护 -->
   <details>
     <summary>维护 / 日志 / 自检</summary>
-    <div class="card" style="margin-top:8px">
+    <div class="card">
       <div class="btn-grid">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 26', '模块自检')">模块自检</button>
         <button class="btn danger" onclick="confirmReset()">一键还原</button>
         <button class="btn" onclick="loadLog()">刷新日志</button>
         <button class="btn danger" onclick="clearLog()">清空日志</button>
       </div>
-      <div class="log-view" id="log-view" style="margin-top:8px">点击"刷新日志"加载</div>
+      <div class="log-view" id="log-view">点击"刷新日志"加载</div>
     </div>
   </details>
 
@@ -266,7 +266,7 @@
   <div class="exec-label" id="exec-label"><span class="exec-label-spinner"></span><span id="exec-label-text">执行中</span>
   </div>
   <div class="toast" id="toast"></div>
-  <div class="alert-box" id="alert-box"><button class="close-btn" style="position:relative;width:32px;height:32px;bottom:auto;right:auto;font-size:16px" onclick="hideAlert()">×</button>
+  <div class="alert-box" id="alert-box"><button class="close-btn close-btn-inline" onclick="hideAlert()">×</button>
     <div id="alert-content"></div>
   </div>
 

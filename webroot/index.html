@@ -24,9 +24,9 @@
         <span>API 状态</span>
         <button class="btn btn-sm" onclick="runDiagnostics()">重新诊断</button>
       </div>
-      <div class="diag wifi-raw" id="diag-output">等待诊断...</div>
+      <div class="diag wifi-info-raw" id="diag-output">等待诊断...</div>
       <div class="btn-grid" style="grid-template-columns:1fr;margin-top:12px">
-        <button class="btn warn" onclick="testExec()">测试 exec</button>
+        <button class="btn" onclick="testExec()">测试 exec</button>
       </div>
     </div>
   </details>
@@ -40,23 +40,23 @@
       <span class="badge" id="net-badge">未检测</span>
     </div>
     <div class="grid">
-      <div class="stat stat-span2">
-        <div class="stat-label">WiFi SSID</div>
-        <div class="stat-value small" id="wifi-ssid">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">WiFi RSSI</div>
-        <div class="stat-value" id="wifi-rssi">加载中</div>
+      <div class="stat stat-span2 wifi-stat-host">
+        <div class="stat-label">WiFi 信号详情</div>
+        <div id="wifi-ssid">加载中</div>
       </div>
       <div class="stat">
         <div class="stat-label">公网延迟</div>
         <div class="stat-value" id="net-ping">加载中</div>
       </div>
-      <div class="stat">
+      <div class="stat stat-hidden">
+        <div class="stat-label">WiFi RSSI</div>
+        <div class="stat-value" id="wifi-rssi">加载中</div>
+      </div>
+      <div class="stat stat-hidden">
         <div class="stat-label">WiFi 链路速率</div>
         <div class="stat-value" id="wifi-speed">加载中</div>
       </div>
-      <div class="stat">
+      <div class="stat stat-hidden">
         <div class="stat-label">WiFi 频段</div>
         <div class="stat-value" id="wifi-freq">加载中</div>
       </div>
@@ -152,8 +152,8 @@
       </div>
     </div>
     <div class="btn-grid cols-3">
-      <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh start', '启动')">启动</button>
-      <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh stop', '停止')">停止</button>
+      <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh start', '启动')">启动</button>
+      <button class="btn danger" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh stop', '停止')">停止</button>
       <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh restart', '重启')">重启</button>
       <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh detect', '单次检测')">检测</button>
       <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh notify', '测试通知')">通知</button>
@@ -193,7 +193,7 @@
       <div class="hint-text">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
       <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang">
       <div class="btn-grid">
-        <button class="btn success" onclick="addVpnWhitelist()">加入白名单</button>
+        <button class="btn primary" onclick="addVpnWhitelist()">加入白名单</button>
         <button class="btn danger" onclick="removeVpnWhitelist()">移出白名单</button>
       </div>
     </div>
@@ -205,8 +205,8 @@
     <div class="card">
       <div class="btn-grid cols-3">
         <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
-        <button class="btn warn" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
-        <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
+        <button class="btn danger" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
+        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
       </div>
       <div class="hint-text">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
     </div>
@@ -864,7 +864,23 @@
           var mobile1 = data.mobile1 || {};
           var mobile2 = data.mobile2 || {};
 
-          document.getElementById('wifi-ssid').textContent = wifi.ssid || '-';
+          // v1.1.6 V2: WiFi 信息结构化渲染
+          //   合成 raw WifiInfo 字符串后调用 renderWifiInfo，渲染 SSID + 标签 + 信号徽章
+          //   原 wifi-rssi / wifi-speed / wifi-freq 元素仍保留赋值（兼容 stat-hidden 隐藏卡片）
+          var wifiSsidEl = document.getElementById('wifi-ssid');
+          var wifiRawStr = 'SSID:' + (wifi.ssid || '未知网络') +
+                           ',RSSI:' + (wifi.rssi || '?') +
+                           ',Linkspeed:' + (wifi.link_speed || '?') + ' Mbps' +
+                           ',band:' + (wifi.frequency || '?');
+          if (wifiSsidEl) {
+            try {
+              renderWifiInfo(wifiSsidEl, wifiRawStr);
+            } catch (e) {
+              diag('renderWifiInfo 异常: ' + e, 'err');
+              wifiSsidEl.textContent = wifi.ssid || '-';
+            }
+          }
+
           var rssiEl = document.getElementById('wifi-rssi');
           var rssiVal = wifi.rssi || '?';
           rssiEl.textContent = rssiVal + ' dBm';
@@ -1194,6 +1210,102 @@
     function escapeHtml(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ======================================================================
+    // WiFi 结构化解析与渲染（v1.1.6 V2）
+    //   - parseWifiInfo: 从 raw WifiInfo 字符串解析 SSID/RSSI/BSSID/standard 等
+    //   - getSignalMeta: 根据 RSSI 数值返回信号等级 + 颜色 + 背景色
+    //   - renderWifiInfo: 在容器内渲染结构化卡片（图标 + SSID + 标签 + 信号徽章 + BSSID/MAC）
+    //   注: escapeHtml 已存在，复用之；不替换原有定义
+    // ======================================================================
+
+    function parseWifiInfo(raw) {
+      if (!raw || typeof raw !== 'string') return null;
+      var info = { raw: raw };
+      var ssidMatch = raw.match(/SSID:([^,]+)/);
+      info.ssid = ssidMatch ? ssidMatch[1].trim() : '未知网络';
+      var fields = [
+        ['bssid', /BSSID:([^,]+)/],
+        ['mac', /MAC:([^,]+)/],
+        ['standard', /Fistandard:([^,]+)/],
+        ['rssi', /RSSI:([^,]+)/],
+        ['linkspeed', /Linkspeed:([^,]+)/],
+        ['band', /band:([^,]+)/i],
+        ['security', /wpa2|wpa3|wep|psk|sae/gi]
+      ];
+      fields.forEach(function (pair) {
+        var key = pair[0], regex = pair[1];
+        var m = raw.match(regex);
+        info[key] = m ? (m[1] || m[0]) : null;
+      });
+      Object.keys(info).forEach(function (k) {
+        if (info[k] === '<none>' || info[k] === 'null') info[k] = null;
+      });
+      if (!info.band && info.ssid) {
+        if (info.ssid.indexOf('5G') >= 0 || (info.standard && info.standard.indexOf('ax') >= 0)) {
+          info.band = '5 GHz';
+        } else if (info.ssid.indexOf('2.4G') >= 0) {
+          info.band = '2.4 GHz';
+        }
+      }
+      info.rssiNum = info.rssi ? parseInt(info.rssi, 10) : null;
+      if (isNaN(info.rssiNum)) info.rssiNum = null;
+      return info;
+    }
+
+    function getSignalMeta(rssi) {
+      if (rssi === null || isNaN(rssi)) return { level: '未知', color: '#9CA3AF', bg: 'rgba(156,163,175,0.08)' };
+      if (rssi >= -50) return { level: '极强', color: '#10B981', bg: 'rgba(16,185,129,0.10)' };
+      if (rssi >= -65) return { level: '良好', color: '#34D399', bg: 'rgba(52,211,153,0.10)' };
+      if (rssi >= -80) return { level: '一般', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)' };
+      return { level: '较弱', color: '#F43F5E', bg: 'rgba(244,63,94,0.10)' };
+    }
+
+    function renderWifiInfo(container, rawString) {
+      if (!container) return;
+      var wifi = parseWifiInfo(rawString);
+      if (!wifi) {
+        container.innerHTML = '<div class="wifi-empty">无法解析 WiFi 信息</div>';
+        return;
+      }
+      var sig = getSignalMeta(wifi.rssiNum);
+      var tags = [];
+      if (wifi.standard) tags.push({ text: wifi.standard.toUpperCase(), type: 'tech' });
+      if (wifi.band) tags.push({ text: wifi.band, type: 'band' });
+      if (wifi.security) tags.push({ text: wifi.security.toUpperCase(), type: 'security' });
+      if (wifi.linkspeed) tags.push({ text: wifi.linkspeed, type: 'speed' });
+      var tagsHtml = tags.map(function (t) {
+        return '<span class="wifi-tag wifi-tag--' + t.type + '">' + escapeHtml(t.text) + '</span>';
+      }).join('');
+      var metaHtml = (wifi.bssid || wifi.mac)
+        ? '<div class="wifi-meta">' +
+          (wifi.bssid ? '<span>BSSID: ' + escapeHtml(wifi.bssid) + '</span>' : '') +
+          (wifi.mac ? '<span>MAC: ' + escapeHtml(wifi.mac) + '</span>' : '') +
+          '</div>'
+        : '';
+      var signalBadge = (wifi.rssiNum !== null)
+        ? '<div class="wifi-signal-badge" style="color:' + sig.color + ';background:' + sig.bg + ';border:1px solid ' + sig.color + '20">' + wifi.rssiNum + ' dBm · ' + sig.level + '</div>'
+        : '';
+      container.innerHTML =
+        '<div class="wifi-structured">' +
+          '<div class="wifi-header">' +
+            '<div class="wifi-icon">' +
+              '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + sig.color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M5 12.55a11 11 0 0 1 14.08 0"/>' +
+                '<path d="M1.42 9a16 16 0 0 1 21.16 0"/>' +
+                '<path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>' +
+                '<line x1="12" y1="20" x2="12.01" y2="20"/>' +
+              '</svg>' +
+            '</div>' +
+            '<div class="wifi-title-group">' +
+              '<div class="wifi-ssid">' + escapeHtml(wifi.ssid) + '</div>' +
+              '<div class="wifi-tags-row">' + tagsHtml + '</div>' +
+            '</div>' +
+            signalBadge +
+          '</div>' +
+          metaHtml +
+        '</div>';
     }
 
     function loadEnv() {

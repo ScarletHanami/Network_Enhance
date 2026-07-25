@@ -161,17 +161,27 @@ body {
   margin-bottom: 8px;
 }
 
-/* 数值：24-28px Bold，等宽防跳动，不换行 */
+/* 数值：22px Bold，等宽防跳动，不换行，溢出省略 */
 .stat-value, .metric-value {
   font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-  font-size: 26px; font-weight: 700;
+  font-size: 22px; font-weight: 700;
   color: var(--text-primary);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
-  white-space: nowrap; word-break: keep-all;
-  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.1;
+}
+
+/* 单位（dBm / dB / Mbps 等小字标签） */
+.metric-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 .stat-value.small, .metric-value.small {
   font-size: 16px; font-weight: 600;
@@ -195,21 +205,24 @@ body {
 }
 .btn-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 
-/* --- Button: 凸起 + 按压 inset（拟物物理反馈） --- */
+/* --- Button: 默认 = Secondary（灰凹陷/扁平），按压加深内陷 --- */
 .neu-btn, .btn {
-  background: var(--surface);
-  box-shadow: var(--shadow-btn);
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-in-sm);
   border: var(--border-hair);
   border-radius: var(--radius-inner);
   color: var(--text-secondary);
-  font-weight: 600;
-  padding: 12px 20px;
-  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 14px;
+  font-size: 14px;
   cursor: pointer;
   transition: box-shadow 0.15s ease, transform 0.05s ease, color 0.15s ease;
   text-align: center;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .neu-btn:active, .btn:active {
   box-shadow: var(--shadow-in);
@@ -338,18 +351,25 @@ body {
 }
 .action-bar.accent::after { color: rgba(37, 99, 235, 0.45); }
 
-/* --- WiFi 原始信息（凹陷面板 + 防撑破） --- */
-.wifi-raw {
+/* --- WiFi 原始信息（移动端强制断行，防溢出） --- */
+.wifi-info-raw {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  font-size: 12px; line-height: 1.85;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-secondary);
   background: var(--surface-inset);
   box-shadow: var(--shadow-in-sm);
-  padding: 16px;
+  padding: 12px;
   border-radius: var(--radius-inner);
-  word-break: break-all; overflow-wrap: anywhere; hyphens: none;
-  max-height: 144px; overflow-y: auto;
-  box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  hyphens: none;
+  max-height: 120px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -405,16 +425,16 @@ details[open] > summary {
   margin-bottom: 16px;
 }
 
-/* --- Diag / Log（凹陷面板 + 等宽 + tabular） --- */
+/* --- Diag 输出（与 .wifi-info-raw 同规范，因 JS 会覆写 className 为 'diag'） --- */
 .diag {
   background: var(--surface-inset);
   box-shadow: var(--shadow-in-sm);
   border-radius: var(--radius-inner);
-  padding: 16px;
+  padding: 12px;
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  font-size: 11px; line-height: 1.7;
+  font-size: 13px; line-height: 1.5;
   color: var(--text-secondary);
-  max-height: 240px; overflow-y: auto;
+  max-height: 120px; overflow-y: auto;
   white-space: pre-wrap; word-break: break-all;
   margin-top: 12px;
   font-variant-numeric: tabular-nums;
@@ -587,15 +607,16 @@ input[type="text"]::placeholder { color: var(--text-muted); }
 .card > .btn-grid { margin-top: 12px; }
 .card > .grid + .btn-grid { margin-top: 16px; }
 
-/* --- 小号按钮（如"重新诊断"） --- */
+/* --- 小号按钮（如"重新诊断"），沿用 Secondary 凹陷风格 --- */
 .btn.btn-sm {
   padding: 6px 14px;
   font-size: 12px;
   border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-badge);
+  box-shadow: var(--shadow-in-sm);
+  white-space: nowrap;
 }
 .btn.btn-sm:active {
-  box-shadow: var(--shadow-in-sm);
+  box-shadow: var(--shadow-in);
   transform: none;
 }
 
@@ -628,4 +649,224 @@ input[type="text"]::placeholder { color: var(--text-muted); }
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   移动端响应式收紧（@media max-width:480px）
+   - 卡片 padding 24px → 16px
+   - 页面容器 padding 16px → 12px（左右），gap 16px → 12px
+   - 数值字号进一步收紧，防小屏撑破
+   - summary / action-bar 内边距同步收紧
+   ========================================================================== */
+@media (max-width: 480px) {
+  body {
+    padding: 12px;
+    padding-bottom: 80px;
+  }
+  .header {
+    padding: 12px 0 12px;
+    margin-bottom: 12px;
+  }
+  .header h1 {
+    font-size: 22px;
+  }
+  .header .ver {
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .api-banner {
+    padding: 10px 12px;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .card {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .card-title {
+    font-size: 15px;
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+  .grid {
+    gap: 12px;
+  }
+  .btn-grid {
+    gap: 12px;
+  }
+  .stat, .metric-card {
+    padding: 12px;
+    min-height: 68px;
+  }
+  .stat-label, .metric-label {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  /* 小屏数值再收紧一档，防溢出 */
+  .stat-value, .metric-value {
+    font-size: 20px;
+  }
+  .stat-value.small, .metric-value.small {
+    font-size: 14px;
+  }
+  /* 按钮再收紧 */
+  .neu-btn, .btn {
+    padding: 9px 10px;
+    font-size: 13px;
+  }
+  /* summary 折叠条收紧 */
+  details > summary {
+    padding: 14px 16px;
+    font-size: 14px;
+  }
+  details > summary::after {
+    right: 16px;
+    font-size: 14px;
+  }
+  /* 通栏操作条收紧 */
+  .action-bar {
+    padding: 14px 40px 14px 16px;
+    font-size: 13px;
+  }
+  .action-bar::after {
+    right: 16px;
+    font-size: 20px;
+  }
+  /* 凹陷面板收紧 */
+  .info-panel, .diag, .log-view, .wifi-info-raw {
+    padding: 12px;
+  }
+  .hint-text {
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  /* footer 收紧 */
+  .footer {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+}
+
+/* ==========================================================================
+   WiFi 结构化卡片（v1.1.6 V2）
+   - 在 wifi-ssid 容器内渲染：图标 + SSID + 标签 + 信号徽章 + BSSID/MAC 元信息
+   - 防止 SSID 撑破卡片：white-space: nowrap + text-overflow: ellipsis
+   ========================================================================== */
+
+/* 宿主 stat 卡片：去除自身 padding/背景/阴影，让 .wifi-structured 自带视觉 */
+.wifi-stat-host {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  min-height: 0;
+}
+.wifi-stat-host .stat-label {
+  padding: 16px 16px 0 16px;
+}
+
+.wifi-structured {
+  background: #FFFFFF;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: inset 2px 2px 5px rgba(15, 23, 42, 0.03), inset -2px -2px 5px rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.wifi-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.wifi-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 1px 1px 3px rgba(15, 23, 42, 0.05), inset -1px -1px 2px rgba(255, 255, 255, 0.9);
+}
+.wifi-title-group {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.wifi-ssid {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1F2937;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.wifi-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wifi-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.wifi-tag--tech     { color: #4F46E5; background: rgba(79, 70, 229, 0.08); border: 1px solid rgba(79, 70, 229, 0.12); }
+.wifi-tag--band     { color: #0891B2; background: rgba(8, 145, 178, 0.08); border: 1px solid rgba(8, 145, 178, 0.12); }
+.wifi-tag--security { color: #059669; background: rgba(5, 150, 105, 0.08); border: 1px solid rgba(5, 150, 105, 0.12); }
+.wifi-tag--speed    { color: #D97706; background: rgba(217, 119, 6, 0.08); border: 1px solid rgba(217, 119, 6, 0.12); }
+.wifi-signal-badge {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 1px 1px 3px rgba(15, 23, 42, 0.06), -1px -1px 2px rgba(255, 255, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+.wifi-meta {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.wifi-meta span {
+  font-size: 11px;
+  color: #9CA3AF;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  word-break: break-all;
+}
+.wifi-empty {
+  text-align: center;
+  padding: 20px;
+  color: #9CA3AF;
+  font-size: 13px;
+}
+
+/* 移动端响应式收紧 */
+@media (max-width: 480px) {
+  .wifi-structured { padding: 12px; }
+  .wifi-stat-host .stat-label { padding: 12px 12px 0 12px; }
+  .wifi-ssid { font-size: 16px; }
+  .wifi-signal-badge { font-size: 10px; padding: 4px 8px; }
+  .wifi-icon { width: 32px; height: 32px; }
+  .wifi-header { gap: 10px; }
+  .wifi-tags-row { gap: 4px; }
+  .wifi-tag { font-size: 10px; padding: 2px 6px; }
 }

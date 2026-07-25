@@ -1,6 +1,5 @@
 /* ==========================================================================
-   网络增强 v1.1.5 UI v2 — 全浅色新拟态设计系统
-   彻底移除深色 LCD 隐喻，统一浅色视觉
+   网络增强 v1.1.5 UI v3 — 全浅色新拟态设计系统 (阴影锐化 + 细节拾遗)
    ========================================================================== */
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
@@ -8,15 +7,15 @@
 :root {
   --bg: #F0F0F3;
   --surface: #FFFFFF;
-  --shadow-dark: #D1D9E6;
+  --shadow-dark: #B8C4D4;
   --shadow-light: #FFFFFF;
   --text-primary: #1F2937;
-  --text-secondary: #718096;
-  --text-muted: #A0AEC0;
+  --text-secondary: #334155;
+  --text-muted: #94A3B8;
   --radius-card: 12px;
   --radius-btn: 10px;
-  --neumo-out: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
-  --neumo-out-sm: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+  --neumo-out: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light), 0 8px 24px rgba(0,0,0,0.03);
+  --neumo-out-sm: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light), 0 4px 12px rgba(0,0,0,0.02);
   --neumo-in: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
   --neumo-in-sm: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
 }
@@ -39,7 +38,7 @@ body {
 /* --- Header --- */
 .header {
   padding: 16px 0 12px;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
   text-align: center;
 }
 .header h1 {
@@ -59,7 +58,7 @@ body {
   padding: 10px 14px;
   border-radius: var(--radius-btn);
   font-size: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 20px;
   display: none;
   font-weight: 500;
 }
@@ -67,20 +66,20 @@ body {
 .api-banner.warn { background: #FFF8E1; color: #F57F17; display: block; }
 .api-banner.err { background: #FFEBEE; color: #C62828; display: block; }
 
-/* --- Card (新拟态凸起卡片) --- */
+/* --- Card (新拟态凸起卡片，阴影锐化) --- */
 .card {
   background: var(--bg);
   border-radius: var(--radius-card);
   padding: 16px;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
   box-shadow: var(--neumo-out);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 .card-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -104,81 +103,49 @@ body {
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* --- Metric Card (浅色新拟态凸起，替代黑底) --- */
-.metric-card {
+/* --- Stat / Metric Card (浅色新拟态凸起) --- */
+.stat, .metric-card {
   background: var(--bg);
   box-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
   border-radius: 12px;
   padding: 12px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   text-align: center;
 }
 
-/* --- Metric Label (小字标签) --- */
-.metric-label {
-  font-size: 12px;
-  color: var(--text-secondary);
+/* --- Metric Label (小字标签，缩小到 11px) --- */
+.stat-label, .metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
-/* --- Metric Value (等宽+语义色，替代黑底白字) --- */
-.metric-value {
+/* --- Metric Value (放大到 22px 加粗) --- */
+.stat-value, .metric-value {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-top: 4px;
-}
-.metric-value.small { font-size: 14px; }
-
-/* 信号质量色标（浅色背景上的饱和色） */
-.metric-value.excellent { color: #059669; }
-.metric-value.good      { color: #0891B2; }
-.metric-value.warn      { color: #D97706; }
-.metric-value.poor      { color: #EA580C; }
-.metric-value.bad       { color: #DC2626; }
-
-/* --- 兼容旧 class: stat / stat-label / stat-value --- */
-.stat {
-  background: var(--bg);
-  box-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
-  border-radius: 12px;
-  padding: 12px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  text-align: center;
-}
-.stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-.stat-value {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
   margin-top: 4px;
   word-break: break-all;
 }
-.stat-value.small { font-size: 14px; }
-.stat-value.excellent { color: #059669; }
-.stat-value.good      { color: #0891B2; }
-.stat-value.warn      { color: #D97706; }
-.stat-value.poor      { color: #EA580C; }
-.stat-value.bad       { color: #DC2626; }
+.stat-value.small, .metric-value.small { font-size: 15px; }
+.stat-value.excellent, .metric-value.excellent { color: #059669; }
+.stat-value.good, .metric-value.good      { color: #0891B2; }
+.stat-value.warn, .metric-value.warn      { color: #D97706; }
+.stat-value.poor, .metric-value.poor      { color: #EA580C; }
+.stat-value.bad, .metric-value.bad       { color: #DC2626; }
 
 /* --- Button Grid --- */
 .btn-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 .btn-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 
@@ -188,7 +155,7 @@ body {
   box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
   border-radius: var(--radius-btn);
   border: none;
-  color: #4A5568;
+  color: #475569;
   font-weight: 600;
   padding: 10px 20px;
   font-size: 12px;
@@ -203,7 +170,7 @@ body {
 }
 .neu-btn:disabled, .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 主操作（启动、恢复默认）— 淡绿凸起 */
+/* 主操作 — 淡绿凸起 */
 .neu-btn-primary, .btn.primary, .btn.success {
   background: linear-gradient(145deg, #E8F5E9, #C8E6C9);
   color: #2E7D32;
@@ -213,7 +180,7 @@ body {
   box-shadow: inset 3px 3px 6px rgba(16,185,129,0.2), inset -3px -3px 6px var(--shadow-light);
 }
 
-/* 强调操作（代理稳定、刷新状态、智能选择）— 淡蓝凸起 */
+/* 强调操作 — 淡蓝凸起 */
 .neu-btn-accent {
   background: linear-gradient(145deg, #EBF5FF, #D6E9FF);
   color: #2563EB;
@@ -223,7 +190,7 @@ body {
   box-shadow: inset 3px 3px 6px rgba(59,130,246,0.2), inset -3px -3px 6px var(--shadow-light);
 }
 
-/* 危险/停止 — 淡红凸起，不要描边 */
+/* 危险 — 淡红凸起 */
 .neu-btn-danger, .btn.danger, .btn.warn {
   background: linear-gradient(145deg, #FFEBEE, #FFCDD2);
   color: #C62828;
@@ -234,13 +201,77 @@ body {
   box-shadow: inset 3px 3px 6px rgba(239,68,68,0.2), inset -3px -3px 6px var(--shadow-light);
 }
 
-/* 次操作（检测、通知、撤销、重启）— 纯白凸起 */
+/* 次操作 — 纯白凸起 */
 .neu-btn-secondary {
   background: linear-gradient(145deg, #FFFFFF, #F0F0F3);
   color: #718096;
 }
 
-/* --- Info Panel (浅色凹陷面板，替代黑底) --- */
+/* --- 模式按钮选中态 (弱网自救场景模式) --- */
+.mode-btn {
+  background: linear-gradient(145deg, #FFFFFF, #F0F0F3);
+  box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+  border-radius: var(--radius-btn);
+  border: none;
+  color: #475569;
+  font-weight: 500;
+  padding: 10px 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  font-family: inherit;
+}
+.mode-btn.active {
+  background: var(--bg);
+  box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+  color: #2563EB;
+  font-weight: 700;
+}
+
+/* --- 通栏操作卡片 (代理稳定/恢复默认) --- */
+.action-bar {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(145deg, #E8F5E9, #C8E6C9);
+  box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+  border-radius: var(--radius-card);
+  text-align: center;
+  font-weight: 600;
+  color: #2E7D32;
+  margin-bottom: 10px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.action-bar:active {
+  box-shadow: inset 3px 3px 6px #A3B9A6, inset -3px -3px 6px var(--shadow-light);
+}
+.action-bar.accent {
+  background: linear-gradient(145deg, #EBF5FF, #D6E9FF);
+  color: #2563EB;
+}
+.action-bar.accent:active {
+  box-shadow: inset 3px 3px 6px #9DB8D6, inset -3px -3px 6px var(--shadow-light);
+}
+
+/* --- WiFi 原始信息格式化 --- */
+.wifi-raw {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11.5px;
+  line-height: 1.9;
+  color: #64748B;
+  background: var(--bg);
+  box-shadow: var(--neumo-in-sm);
+  padding: 14px;
+  border-radius: 10px;
+  word-break: break-all;
+}
+
+/* --- Info Panel (浅色凹陷面板) --- */
 .info-panel {
   background: var(--bg);
   box-shadow: var(--neumo-in-sm);
@@ -256,73 +287,36 @@ body {
 .info-key { font-size: 13px; color: var(--text-secondary); }
 .info-value { font-family: ui-monospace, monospace; font-size: 13px; color: var(--text-primary); font-weight: 500; }
 
-/* --- Toast --- */
-.toast {
-  position: fixed; left: 50%; bottom: 30px;
-  transform: translateX(-50%);
-  background: var(--text-primary);
-  color: #FFFFFF;
-  padding: 10px 20px;
-  border-radius: var(--radius-btn);
-  font-size: 13px;
-  opacity: 0;
-  transition: opacity 0.25s;
-  pointer-events: none;
-  z-index: 1000;
-  max-width: 90%;
-  text-align: center;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-.toast.show { opacity: 1; }
-
-/* --- Alert Box --- */
-.alert-box {
-  position: fixed; top: 10px; left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface);
-  color: var(--text-primary);
-  padding: 14px 18px;
-  border-radius: var(--radius-card);
-  font-size: 12px;
-  z-index: 2000;
-  max-width: 90%;
-  text-align: left;
-  white-space: pre-wrap;
-  word-break: break-all;
-  display: none;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  max-height: 70vh;
-  overflow-y: auto;
-}
-.alert-box.show { display: block; }
-.alert-box .close {
-  color: var(--text-muted);
-  cursor: pointer;
-  float: right;
-  font-weight: bold;
-  margin-left: 8px;
-  font-size: 16px;
-}
-
-/* --- Diag Panel --- */
-details summary {
+/* --- Details Summary (折叠标题卡片化) --- */
+details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
   background: var(--bg);
   box-shadow: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
   border-radius: var(--radius-card);
-  padding: 14px 18px;
   font-weight: 600;
-  color: var(--text-primary);
-  list-style: none;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
   cursor: pointer;
-  margin-bottom: 8px;
+  list-style: none;
   font-size: 14px;
 }
-details summary::-webkit-details-marker { display: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after {
+  content: '▸';
+  color: var(--text-muted);
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+details[open] > summary::after { transform: rotate(90deg); }
 details[open] > summary {
   box-shadow: var(--neumo-in);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
+/* --- Diag Panel (诊断面板) --- */
 .diag {
   background: var(--bg);
   border-radius: var(--radius-card);
@@ -330,7 +324,7 @@ details[open] > summary {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 10px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   max-height: 200px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -349,7 +343,7 @@ details[open] > summary {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 10px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   max-height: 250px;
   overflow-y: auto;
   white-space: pre-wrap;

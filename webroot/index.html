@@ -18,13 +18,13 @@
   <div class="api-banner" id="api-banner"></div>
 
   <details id="diag-panel">
-    <summary>⚠ 诊断面板 (出现问题请展开查看)</summary>
+    <summary>诊断面板 (出现问题请展开查看)</summary>
     <div class="card">
       <div class="card-title">
         <span>API 状态</span>
         <button class="btn" style="padding:4px 8px;font-size:11px" onclick="runDiagnostics()">重新诊断</button>
       </div>
-      <div class="diag" id="diag-output">等待诊断...</div>
+      <div class="diag wifi-raw" id="diag-output">等待诊断...</div>
       <div style="margin-top:8px">
         <button class="btn warn" style="width:100%" onclick="testExec()">测试 exec</button>
       </div>
@@ -172,12 +172,14 @@
         <span class="badge" id="weaknet-badge">未知</span>
       </div>
       <div class="btn-grid">
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
-        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')" style="grid-column:1/-1">代理稳定模式</button>
-        <button class="btn success" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')" style="grid-column:1/-1">恢复默认优化</button>
+        <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
+        <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
+        <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
+        <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
+      </div>
+      <div style="margin-top:10px">
+        <button class="action-bar accent" onclick="runCmd('sh ' + MODDIR + '/action.sh 33', '代理稳定模式')">代理稳定模式</button>
+        <button class="action-bar" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh normal', '恢复默认')">恢复默认优化</button>
       </div>
     </div>
   </details>
@@ -321,7 +323,7 @@
       var el = document.getElementById('diag-output');
       if (el) {
         el.className = 'diag' + (level === 'err' ? ' err' : level === 'ok' ? ' ok' : '');
-        el.textContent = diagLog.join('\n');
+        el.textContent = diagLog.join('\n').replace(/,/g, ', ');
         el.scrollTop = el.scrollHeight;
       }
       console.log('[diag]', msg);

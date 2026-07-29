@@ -1,5 +1,52 @@
 # 网络增强 版本日志
 
+## v1.1.6 (2026-07-29) — UI 大重构与 WiFi 解析终极修复（正式版）
+
+### 视觉大重构：全新白色轻拟物化（Neumorphism）设计语言
+- 引入光源感双阴影系统（左上高光 + 右下投影），冷白色彩体系（页面 `#F8FAFC` + 卡片 `#FFFFFF`）
+- 主色调升级为靛蓝紫 `#6366F1`，语义色全部采用 tint 透明度背景（10-15%）
+- 严格 4/8/16px 网格系统，圆角体系（6/10/12/16/20/999px）
+- 字体层级：大数字 36px / weight 700 / `tabular-nums`，公网延迟 48px / weight 800 戏剧化展示
+
+### 交互升级
+- 场景模式选择器增加选中态视觉反馈（渐变背景 + 紫色边框 + 外发光 + 左侧装饰条 + 左上角勾选标记 + checkPop 动画）
+- "刷新全部状态"按钮升级为全局主 CTA（紫色渐变 + 彩色投影 + Hover 上浮 + 图标旋转 180° + 光泽扫过）
+- 终端输出区增加深色主题（`#0F172A` 背景 + 内阴影 + 4 色语法高亮）+ Terminal Header + 一键复制功能
+- "测试 exec"按钮增加左侧 ▶ 图标 + 加深边框 + Hover 上浮
+- "重新诊断"按钮 Hover 时虚线变实线 + 边框变蓝 + 文字变紫
+- 场景模式未选中按钮 Hover 上浮 2px + 阴影
+- 输入框 Focus 4px 紫色光晕 + 主题紫边框
+
+### WiFi 解析终极修复
+- 采用暴力截取法重构 Frequency 解析，彻底解决部分 ROM 频段抓取失败问题
+- 新增 6GHz WiFi 频段判定（感谢 @Aibeto 的 PR 贡献）
+- WiFi 信息结构化解析重构：新增 `parseWifiInfo` / `getSignalMeta` / `renderWifiInfo` 三个函数，渲染图标 + SSID + 技术标签 + 信号徽章 + BSSID/MAC 元信息
+
+### 数据可视化
+- 信号 Level 用 4 格 `.signal-bars` 表示（根据等级点亮格子）
+- RSRP/SINR/RSRQ/dBm 等关键指标底部增加 `.progress-track` 进度条（8px 高，根据数值给 danger/warning/good 类）
+- 新增 `renderSignalBars` / `renderProgressTrack` 两个渲染函数（不改动原数据获取逻辑）
+
+### 按钮体系统一为 4 级
+- `.btn-primary`：主色 `#6366F1` 填充 + 白字（正向主操作）
+- `.btn-secondary`：浅灰填充 + 黑字 + 细边框（功能切换）
+- `.btn-ghost`：透明 + 灰色虚线边框（辅助操作）
+- `.btn-danger`：红色 tint 背景 + 红字（破坏性操作）
+
+### 工程化
+- 引入 GitHub Actions CI 自动化测试
+- CI 调试埋点系统：`module.prop` version 以 `ci` 开头时自动激活全链路日志（`/data/local/tmp/Network_Enhance/ci.log`）
+- 移动端响应式收紧（`@media max-width:480px`）
+- 暗色模式自动适配（`prefers-color-scheme: dark`）
+
+### 细节优化
+- SIM 卡子卡片改用 transparent 背景 + 2px dashed 虚线边框（Hover 变蓝）
+- 卡2 未知数据占位符改为 em-dash `—` + 斜体灰色 `.value-unknown-text`
+- Footer 字号增至 12px + 颜色加深 + 顶部 border-top 分割线
+- 每个 section-title 左侧增加 20px 线性 SVG 图标（stroke-width 1.5px）
+
+---
+
 ## v1.1.5 (2026-07-25) — WebUI 性能优化与白屏修复
 
 - 合并 @Aibeto PR #5：WebUI 重构（移除全局 exec 队列、简化异步调度、新增执行指示器）

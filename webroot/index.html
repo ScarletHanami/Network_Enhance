@@ -12,165 +12,246 @@
 
   <div class="header">
     <h1>网络增强</h1>
-    <div class="ver">v1.1.5 · <span id="env-info">初始化...</span></div>
+    <div class="ver">v1.1.6 · <span id="env-info">初始化...</span></div>
   </div>
 
   <div class="api-banner" id="api-banner"></div>
 
   <details id="diag-panel">
-    <summary>诊断面板 (出现问题请展开查看)</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      诊断面板 (出现问题请展开查看)
+    </summary>
     <div class="card">
       <div class="card-title">
         <span>API 状态</span>
-        <button class="btn btn-sm" onclick="runDiagnostics()">重新诊断</button>
+        <button class="btn btn-sm btn-ghost btn-rediagnose" onclick="runDiagnostics()">重新诊断</button>
       </div>
-      <div class="diag wifi-info-raw" id="diag-output">等待诊断...</div>
+      <div class="terminal-wrapper">
+        <div class="terminal-header">
+          <div class="terminal-title-row">
+            <span class="terminal-icon">💻</span>
+            <span class="terminal-title">Terminal Output</span>
+          </div>
+          <button class="btn-copy-terminal" onclick="copyTerminalContent()" title="复制全部内容">
+            <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="copy-text">复制</span>
+          </button>
+        </div>
+        <div class="diag wifi-info-raw" id="diag-output">等待诊断...</div>
+      </div>
       <div class="btn-grid" style="grid-template-columns:1fr;margin-top:12px">
-        <button class="btn" onclick="testExec()">测试 exec</button>
+        <button class="btn btn-secondary btn-test-exec" onclick="testExec()">测试 exec</button>
       </div>
     </div>
   </details>
 
   <div class="btn-grid" style="grid-template-columns:1fr;margin-bottom:16px">
-    <button class="btn primary" onclick="refreshAll()">刷新全部状态</button>
+    <button class="refresh-all-btn-primary" onclick="refreshAll()">
+      <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      <span>刷新全部状态</span>
+    </button>
   </div>
-  <div class="card">
-    <div class="card-title">
-      <span>网络状态</span>
+
+  <!-- 网络状态 -->
+  <div class="section">
+    <div class="section-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/>
+      </svg>
+      网络状态
+      <span class="spacer"></span>
       <span class="badge" id="net-badge">未检测</span>
     </div>
-    <div class="grid">
-      <div class="stat stat-span2 wifi-stat-host">
-        <div class="stat-label">WiFi 信号详情</div>
-        <div id="wifi-ssid">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">公网延迟</div>
-        <div class="stat-value" id="net-ping">加载中</div>
-      </div>
-      <div class="stat stat-hidden">
-        <div class="stat-label">WiFi RSSI</div>
-        <div class="stat-value" id="wifi-rssi">加载中</div>
-      </div>
-      <div class="stat stat-hidden">
-        <div class="stat-label">WiFi 链路速率</div>
-        <div class="stat-value" id="wifi-speed">加载中</div>
-      </div>
-      <div class="stat stat-hidden">
-        <div class="stat-label">WiFi 频段</div>
-        <div class="stat-value" id="wifi-freq">加载中</div>
-      </div>
-      <div class="stat stat-hidden">
-        <div class="stat-label">网络类型</div>
-        <div class="stat-value" id="net-type">加载中</div>
+    <div class="card">
+      <div class="grid">
+        <div class="stat stat-span2 wifi-stat-host">
+          <div class="stat-label">WiFi 信号详情</div>
+          <div id="wifi-ssid">加载中</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">公网延迟</div>
+          <div class="stat-value" id="net-ping">加载中</div>
+        </div>
+        <div class="stat stat-hidden">
+          <div class="stat-label">WiFi RSSI</div>
+          <div class="stat-value" id="wifi-rssi">加载中</div>
+        </div>
+        <div class="stat stat-hidden">
+          <div class="stat-label">WiFi 链路速率</div>
+          <div class="stat-value" id="wifi-speed">加载中</div>
+        </div>
+        <div class="stat stat-hidden">
+          <div class="stat-label">WiFi 频段</div>
+          <div class="stat-value" id="wifi-freq">加载中</div>
+        </div>
+        <div class="stat stat-hidden">
+          <div class="stat-label">网络类型</div>
+          <div class="stat-value" id="net-type">加载中</div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- L1: SIM 卡状态 (双卡合并) -->
-  <div class="card">
-    <div class="card-title">
-      <span>SIM 卡状态</span>
+  <div class="section section-sim">
+    <div class="section-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="2" width="16" height="20" rx="2"/>
+        <path d="M8 6h8M8 10h5"/>
+      </svg>
+      SIM 卡状态
     </div>
-    <div class="grid">
-      <div class="stat">
-        <div class="stat-label">卡1 · 运营商</div>
-        <div class="stat-value small" id="mobile-carrier-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡2 · 运营商</div>
-        <div class="stat-value small" id="mobile-carrier-2">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 网络制式</div>
-        <div class="stat-value" id="mobile-rat-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡2 · 网络制式</div>
-        <div class="stat-value" id="mobile-rat-2">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 信号 Level</div>
-        <div class="stat-value" id="mobile-level-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡2 · 信号 Level</div>
-        <div class="stat-value" id="mobile-level-2">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡1 · 信号 dBm</div>
-        <div class="stat-value" id="mobile-dbm-1">加载中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">卡2 · 信号 dBm</div>
-        <div class="stat-value" id="mobile-dbm-2">加载中</div>
+    <div class="card">
+      <div class="grid">
+        <div class="stat">
+          <div class="stat-label">卡1 · 运营商</div>
+          <div class="stat-value small" id="mobile-carrier-1">加载中</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡2 · 运营商</div>
+          <div class="stat-value small value-unknown-text" id="mobile-carrier-2">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡1 · 网络制式</div>
+          <div class="stat-value small" id="mobile-rat-1">加载中</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡2 · 网络制式</div>
+          <div class="stat-value small value-unknown-text" id="mobile-rat-2">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡1 · 信号 Level</div>
+          <div class="stat-value" id="mobile-level-1">加载中</div>
+          <div class="signal-bars" id="mobile-bars-1" style="display:none">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡2 · 信号 Level</div>
+          <div class="stat-value value-unknown-text" id="mobile-level-2">—</div>
+          <div class="signal-bars" id="mobile-bars-2" style="display:none">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡1 · 信号 dBm</div>
+          <div class="stat-value" id="mobile-dbm-1">加载中</div>
+          <div class="progress-track" id="mobile-dbm-bar-1" style="display:none">
+            <div class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">卡2 · 信号 dBm</div>
+          <div class="stat-value value-unknown-text" id="mobile-dbm-2">—</div>
+          <div class="progress-track" id="mobile-dbm-bar-2" style="display:none">
+            <div class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- L2: 5G 信号质量 -->
-  <div class="card">
-    <div class="card-title">
-      <span>5G 信号质量</span>
+  <div class="section">
+    <div class="section-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      5G 信号质量
+      <span class="spacer"></span>
       <span class="badge" id="nr-badge">未检测</span>
     </div>
-    <div class="grid">
-      <div class="stat">
-        <div class="stat-label">NR RSRP (dBm)</div>
-        <div class="stat-value" id="nr-rsrp">-</div>
+    <div class="card">
+      <div class="grid">
+        <div class="stat">
+          <div class="stat-label">NR RSRP (dBm)</div>
+          <div class="stat-value" id="nr-rsrp">-</div>
+          <div class="progress-track" id="nr-rsrp-bar">
+            <div class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">NR SINR (dB)</div>
+          <div class="stat-value" id="nr-sinr">-</div>
+          <div class="progress-track" id="nr-sinr-bar">
+            <div class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">NR RSRQ (dB)</div>
+          <div class="stat-value" id="nr-rsrq">-</div>
+          <div class="progress-track" id="nr-rsrq-bar">
+            <div class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">假满格判定</div>
+          <div class="stat-value" id="fake5g-status">-</div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">NR SINR (dB)</div>
-        <div class="stat-value" id="nr-sinr">-</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">NR RSRQ (dB)</div>
-        <div class="stat-value" id="nr-rsrq">-</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">假满格判定</div>
-        <div class="stat-value" id="fake5g-status">-</div>
-      </div>
+      <div class="fake5g-warn" id="fake5g-warn">检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
     </div>
-    <div class="fake5g-warn" id="fake5g-warn">检测到 5G 假满格，调度器将自动降级到 4G（冷却 30 分钟）</div>
   </div>
 
   <!-- L2: 智能调度器 -->
-  <div class="card">
-    <div class="card-title">
-      <span>智能调度器</span>
+  <div class="section">
+    <div class="section-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      智能调度器
+      <span class="spacer"></span>
       <span class="badge" id="monitor-badge">未知</span>
     </div>
-    <div class="grid">
-      <div class="stat">
-        <div class="stat-label">当前等级</div>
-        <div class="stat-value small" id="mon-level">-</div>
+    <div class="card">
+      <div class="grid">
+        <div class="stat">
+          <div class="stat-label">当前等级</div>
+          <div class="stat-value small" id="mon-level">-</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">5G降级状态</div>
+          <div class="stat-value small" id="mon-fake5g">-</div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">5G降级状态</div>
-        <div class="stat-value small" id="mon-fake5g">-</div>
+      <div class="btn-grid cols-3">
+        <button class="btn btn-primary" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh start', '启动')">启动</button>
+        <button class="btn btn-danger" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh stop', '停止')">停止</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh restart', '重启')">重启</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh detect', '单次检测')">检测</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh notify', '测试通知')">通知</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh cancel', '撤销通知')">撤销</button>
       </div>
-    </div>
-    <div class="btn-grid cols-3">
-      <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh start', '启动')">启动</button>
-      <button class="btn danger" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh stop', '停止')">停止</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh restart', '重启')">重启</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh detect', '单次检测')">检测</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh notify', '测试通知')">通知</button>
-      <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/monitor.sh cancel', '撤销通知')">撤销</button>
     </div>
   </div>
 
   <!-- L3: 弱网自救 (可展开) -->
   <details open>
-    <summary>弱网自救</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      弱网自救
+    </summary>
     <div class="card">
       <div class="card-title">
         <span>场景模式</span>
         <span class="badge" id="weaknet-badge">未知</span>
       </div>
       <div class="btn-grid">
-        <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">视频模式</button>
+        <button class="mode-btn active" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh video', '视频模式')">
+          <span class="mode-check">✓</span>
+          视频模式
+        </button>
         <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh game', '游戏模式(LTE)')">游戏模式(LTE)</button>
         <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh social', '社交模式')">社交模式</button>
         <button class="mode-btn" onclick="runCmd('sh ' + MODDIR + '/scripts/weaknet.sh download', '下载模式')">下载模式</button>
@@ -184,29 +265,40 @@
 
   <!-- L3: 代理白名单 -->
   <details>
-    <summary>代理白名单管理</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <circle cx="12" cy="11" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      代理白名单管理
+    </summary>
     <div class="card">
       <div class="card-title">
         <span>Data Saver 白名单</span>
         <span class="badge" id="wl-badge">Data Saver</span>
       </div>
       <div class="hint-text">代理稳定模式开启后, 将代理软件加入白名单可防止其被 Data Saver 误杀</div>
-      <input type="text" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang">
+      <input type="text" class="input-package-name" id="vpn-pkg-input" placeholder="输入代理软件包名，如 com.v2ray.ang">
       <div class="btn-grid">
-        <button class="btn primary" onclick="addVpnWhitelist()">加入白名单</button>
-        <button class="btn danger" onclick="removeVpnWhitelist()">移出白名单</button>
+        <button class="btn btn-primary" onclick="addVpnWhitelist()">加入白名单</button>
+        <button class="btn btn-danger" onclick="removeVpnWhitelist()">移出白名单</button>
       </div>
     </div>
   </details>
 
   <!-- L3: 5G/LTE 制式管理 -->
   <details>
-    <summary>5G/LTE 制式管理</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+      5G/LTE 制式管理
+    </summary>
     <div class="card">
       <div class="btn-grid cols-3">
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
-        <button class="btn danger" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
-        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/action.sh 30', '5G自检')">5G自检</button>
+        <button class="btn btn-danger" onclick="runCmd('sh ' + MODDIR + '/action.sh 31', '锁定LTE')">锁定LTE</button>
+        <button class="btn btn-primary" onclick="runCmd('sh ' + MODDIR + '/action.sh 32', '解锁LTE')">解锁LTE</button>
       </div>
       <div class="hint-text">锁定LTE会启用LTE Only模式，非VoLTE来电可能无法接通</div>
     </div>
@@ -214,7 +306,14 @@
 
   <!-- L3: Private DNS -->
   <details>
-    <summary>Private DNS (DoT)</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+      </svg>
+      Private DNS (DoT)
+    </summary>
     <div class="card">
       <div class="card-title">
         <span>DNS 状态</span>
@@ -222,44 +321,55 @@
       </div>
       <div class="hint-text">模式: <span id="dns-mode">-</span> | 主机: <span id="dns-spec">-</span></div>
       <div class="btn-grid cols-3">
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on dnspod', 'DNSPod')">DNSPod</button>
-        <button class="btn primary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh auto', '智能选择')">智能选择</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh off', '禁用DNS')">禁用</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh status', 'DNS状态')">状态</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on ali', '阿里')">阿里</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on tencent', '腾讯')">腾讯</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh on dnspod', 'DNSPod')">DNSPod</button>
+        <button class="btn btn-primary" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh auto', '智能选择')">智能选择</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh off', '禁用DNS')">禁用</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/dns.sh status', 'DNS状态')">状态</button>
       </div>
     </div>
   </details>
 
   <!-- L3: WiFi / 运营商 -->
   <details>
-    <summary>WiFi / 运营商优化</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0"/>
+      </svg>
+      WiFi / 运营商优化
+    </summary>
     <div class="card">
       <div class="btn-grid">
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh apply', '应用运营商')">应用运营商</button>
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh status', '运营商状态')">运营商状态</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh apply', '应用WiFi')">应用WiFi</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/wifi.sh status', 'WiFi状态')">WiFi状态</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh apply', '应用运营商')">应用运营商</button>
+        <button class="btn btn-ghost" onclick="runCmd('sh ' + MODDIR + '/scripts/carrier.sh status', '运营商状态')">运营商状态</button>
       </div>
     </div>
   </details>
 
   <!-- L3: 维护 -->
   <details>
-    <summary>维护 / 日志 / 自检</summary>
+    <summary>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      维护 / 日志 / 自检
+    </summary>
     <div class="card">
       <div class="btn-grid">
-        <button class="btn" onclick="runCmd('sh ' + MODDIR + '/action.sh 26', '模块自检')">模块自检</button>
-        <button class="btn danger" onclick="confirmReset()">一键还原</button>
-        <button class="btn" onclick="loadLog()">刷新日志</button>
-        <button class="btn danger" onclick="clearLog()">清空日志</button>
+        <button class="btn btn-secondary" onclick="runCmd('sh ' + MODDIR + '/action.sh 26', '模块自检')">模块自检</button>
+        <button class="btn btn-danger" onclick="confirmReset()">一键还原</button>
+        <button class="btn btn-secondary" onclick="loadLog()">刷新日志</button>
+        <button class="btn btn-danger" onclick="clearLog()">清空日志</button>
       </div>
       <div class="log-view" id="log-view">点击"刷新日志"加载</div>
     </div>
   </details>
 
-  <div class="footer">网络增强 v1.1.5 · MIT License · AxManager 免Root · 5G假满格自救版</div>
+  <div class="footer">网络增强 v1.1.6 · MIT License · AxManager 免Root · 5G假满格自救版</div>
   <div class="exec-indicator" id="exec-indicator">
     <div class="exec-bar"></div>
   </div>
@@ -930,6 +1040,27 @@
             lvl2El.className = 'stat-value ' + levelClass(lvl2FromDbm);
           }
 
+          // v1.1.6 V3: 追加数据可视化渲染（不修改原赋值，仅追加渲染）
+          //   - SIM 卡 signal-bars 根据 level(0-4) 点亮格子
+          //   - SIM 卡 dBm 进度条根据数值映射宽度+颜色
+          //   - 5G 信号质量的 RSRP/SINR/RSRQ 进度条
+          try {
+            // SIM 卡1 Level signal-bars
+            renderSignalBars('mobile-bars-1', lvl1FromDbm);
+            // SIM 卡1 dBm 进度条
+            renderProgressTrack('mobile-dbm-bar-1', dbm1Val, -120, -50, 'dbm');
+            // SIM 卡2
+            if (!m2NoService) {
+              renderSignalBars('mobile-bars-2', lvl2FromDbm);
+              renderProgressTrack('mobile-dbm-bar-2', dbm2Val, -120, -50, 'dbm');
+            } else {
+              renderSignalBars('mobile-bars-2', '?');
+              renderProgressTrack('mobile-dbm-bar-2', '?', -120, -50, 'dbm');
+            }
+          } catch (e) {
+            diag('V3 SIM 数据可视化渲染异常: ' + e, 'err');
+          }
+
           var pingEl = document.getElementById('net-ping');
           var pingVal = data.ping_ms || '?';
           // ping 显示兼容 timeout / 2000
@@ -960,6 +1091,15 @@
           sinrEl.textContent = sinrVal;
           rsrpEl.className = 'stat-value ' + rsrpClass(rsrpVal);
           sinrEl.className = 'stat-value ' + sinrClass(sinrVal);
+
+          // v1.1.6 V3: 5G 信号质量进度条渲染
+          try {
+            renderProgressTrack('nr-rsrp-bar', rsrpVal, -120, -50, 'rsrp');
+            renderProgressTrack('nr-sinr-bar', sinrVal, -10, 20, 'sinr');
+            renderProgressTrack('nr-rsrq-bar', nr.rsrq || '无', -20, -3, 'rsrq');
+          } catch (e) {
+            diag('V3 5G 进度条渲染异常: ' + e, 'err');
+          }
 
           // fake_5g 兼容 '1'/'true'/1/true 多种格式
           var isFake5g = (nr.fake_5g === '1' || nr.fake_5g === 1 || nr.fake_5g === true || nr.fake_5g === 'true');
@@ -1213,6 +1353,85 @@
     }
 
     // ======================================================================
+    // v1.1.6 V3 数据可视化渲染函数
+    //   - renderSignalBars: 根据 level 数值(0-4)点亮 signal-bars 的 4 个格子
+    //   - renderProgressTrack: 根据数值与范围设置 progress-fill 宽度 + 颜色类
+    //   注: 这两个函数只做渲染, 不修改原 stat-value 的 textContent / className
+    //       仅追加到对应容器(若存在)。若容器不存在则静默跳过, 不影响原逻辑
+    // ======================================================================
+
+    function renderSignalBars(containerId, level) {
+      var el = document.getElementById(containerId);
+      if (!el) return;
+      // level 可能是 '4'/'3'/'2'/'1'/'0'/'?'/'无服务' 等
+      var n = parseInt(level, 10);
+      if (isNaN(n)) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'flex';
+      var spans = el.querySelectorAll('span');
+      if (spans.length < 4) return;
+      // 清空 class
+      for (var i = 0; i < 4; i++) {
+        spans[i].className = '';
+      }
+      // 点亮前 n 格
+      for (var j = 0; j < n && j < 4; j++) {
+        if (n >= 3) spans[j].classList.add('on');
+        else if (n === 2) spans[j].classList.add('warn');
+        else spans[j].classList.add('danger');
+      }
+    }
+
+    function renderProgressTrack(containerId, value, min, max, type) {
+      var el = document.getElementById(containerId);
+      if (!el) return;
+      var fill = el.querySelector('.progress-fill');
+      if (!fill) return;
+      el.style.display = 'block';
+      // value 可能是数值字符串或 '无'/'?' 等
+      var n = parseFloat(value);
+      if (isNaN(n)) {
+        fill.style.width = '0%';
+        fill.className = 'progress-fill';
+        return;
+      }
+      // 计算百分比 (min/max 是范围, value 越接近 max 越好)
+      var pct = ((n - min) / (max - min)) * 100;
+      if (pct < 0) pct = 0;
+      if (pct > 100) pct = 100;
+      // 颜色类: type 决定阈值映射
+      // type='rsrp': min=-120, max=-50; good>=-67, warn>=-85, danger>=-100, poor<其它
+      // type='sinr': min=-10, max=20; good>=5, warn>=0, danger>=-5
+      // type='rsrq': min=-20, max=-3; good>=-10, warn>=-15, danger<其它
+      // type='dbm' (mobile): min=-120, max=-50; good>=-67, warn>=-85, danger>=-100
+      // type='ping': min=0, max=300; good<30, warn<80, danger<150
+      var cls = 'good';
+      if (type === 'rsrp' || type === 'dbm') {
+        if (n >= -67) cls = 'good';
+        else if (n >= -85) cls = 'warning';
+        else if (n >= -100) cls = 'danger';
+        else cls = 'poor';
+      } else if (type === 'sinr') {
+        if (n >= 5) cls = 'good';
+        else if (n >= 0) cls = 'warning';
+        else cls = 'danger';
+      } else if (type === 'rsrq') {
+        if (n >= -10) cls = 'good';
+        else if (n >= -15) cls = 'warning';
+        else cls = 'danger';
+      } else if (type === 'ping') {
+        if (n < 30) cls = 'good';
+        else if (n < 80) cls = 'warning';
+        else if (n < 150) cls = 'danger';
+        else cls = 'poor';
+      }
+      fill.className = 'progress-fill ' + cls;
+      fill.style.width = pct + '%';
+    }
+
+    // ======================================================================
     // WiFi 结构化解析与渲染（v1.1.6 V2）
     //   - parseWifiInfo: 从 raw WifiInfo 字符串解析 SSID/RSSI/BSSID/standard 等
     //   - getSignalMeta: 根据 RSSI 数值返回信号等级 + 颜色 + 背景色
@@ -1291,7 +1510,7 @@
         '<div class="wifi-structured">' +
           '<div class="wifi-header">' +
             '<div class="wifi-icon">' +
-              '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + sig.color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+              '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + sig.color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
                 '<path d="M5 12.55a11 11 0 0 1 14.08 0"/>' +
                 '<path d="M1.42 9a16 16 0 0 1 21.16 0"/>' +
                 '<path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>' +
@@ -1386,6 +1605,62 @@
         });
       });
     });
+  </script>
+
+  <!-- V6: 独立 script 标签 - 终端复制功能（不修改原有 44 个 JS 函数） -->
+  <script>
+    // 终端内容复制函数
+    // 点击复制按钮时获取终端内容并写入剪贴板，2 秒后恢复按钮文字
+    function copyTerminalContent() {
+      var terminalEl = document.getElementById('diag-output');
+      var btn = document.querySelector('.btn-copy-terminal');
+      if (!terminalEl || !btn) return;
+
+      var text = terminalEl.innerText || terminalEl.textContent || '';
+      if (!text) return;
+
+      // 优先使用 navigator.clipboard API（HTTPS 或 WebView 安全上下文）
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          markCopied(btn);
+        }).catch(function (err) {
+          fallbackCopy(text, btn);
+        });
+      } else {
+        fallbackCopy(text, btn);
+      }
+    }
+
+    // 兜底复制方案（exec command）
+    function fallbackCopy(text, btn) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          markCopied(btn);
+        }
+      } catch (e) {
+        console.error('复制失败:', e);
+      }
+    }
+
+    // 标记已复制状态，2 秒后恢复
+    function markCopied(btn) {
+      var textEl = btn.querySelector('.copy-text');
+      var originalText = textEl ? textEl.textContent : '';
+      btn.classList.add('copied');
+      if (textEl) textEl.textContent = '已复制';
+      setTimeout(function () {
+        btn.classList.remove('copied');
+        if (textEl) textEl.textContent = originalText || '复制';
+      }, 2000);
+    }
   </script>
 
 </body>
